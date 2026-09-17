@@ -1,0 +1,18 @@
+{
+  "name": "ugsl-learn",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "dev": "npm run dev --workspace=@ugsl/server",
+    "start": "npm run start --workspace=@ugsl/server",
+    "test": "npm run test --workspace=@ugsl/server",
+    "test:integration": "npm run test:integration --workspace=@ugsl/server",
+    "db:generate": "npm run db:generate --workspace=@ugsl/server",
+    "db:migrate": "npm run db:migrate --workspace=@ugsl/server --",
+    "db:deploy": "npm run db:deploy --workspace=@ugsl/server",
+    "db:status": "npm run db:status --workspace=@ugsl/server",
+    "db:seed": "npm run db:seed --workspace=@ugsl/server",
+    "db:studio": "npm run db:studio --workspace=@ugsl/server"
+  }
+}
