@@ -7,12 +7,331 @@ datasource db {
   provider = "mysql"
 }
 
+
 model User {
   id        String   @id @default(uuid()) @db.VarChar(36)
   email     String   @unique @db.VarChar(191)
+  username  String   @unique @db.VarChar(255)
   name      String   @db.VarChar(100)
+  password  String   @db.VarChar(255)
+  image     String?  @db.VarChar(255)
+
+  roleId    String?
+  role      Role?    @relation(fields: [roleId], references: [id])
+
+  learnerProfile LearnerProfile?
+
+  contentValidations ContentValidation[]
+  contentRevisions   ContentRevision[]
+  auditLogs          AuditLog[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  deleted   Boolean  @default(false)
 
   @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  name        String   @unique @db.VarChar(100)
+  description String?  @db.VarChar(255)
+  permissions Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deleted     Boolean  @default(false)
+
+  users       User[]
+
+  @@map("roles")
+}
+
+// --- Learning content & progress -------------------------------------------
+// Draft models from the ERD screenshot. Data types below are best-guess
+// placeholders (marked TODO where the source column was ambiguous) — review
+// before running `prisma migrate dev`.
+
+model LearnerProfile {
+  id                String   @id @default(uuid()) @db.VarChar(36)
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id])
+  hearingStatus     String?  @db.VarChar(50) // TODO: free text or enum (e.g. deaf, hard_of_hearing, hearing)?
+  preferredLanguage String?  @db.VarChar(10) // TODO: locale code, e.g. "en", "asl"
+  preferences       Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  deleted           Boolean  @default(false)
+
+  quizAttempts      QuizAttempt[]
+  progress          LearnerProgress[]
+  favourites        Favourite[]
+  badges            LearnerBadge[]
+  activity          LearnerActivity[]
+
+  @@map("learner_profiles")
+}
+
+model Level {
+  id        Int   @id @default(autoincrement())
+  name      String   @db.VarChar(100)
+  sequence  Int
+  status    String   @default("draft") @db.VarChar(20) // TODO: confirm allowed values (draft/published/archived?)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deleted   Boolean  @default(false)
+
+  modules   Module[]
+
+  @@map("levels")
+}
+
+model Module {
+  id          Int   @id @default(autoincrement())
+  levelId     Int
+  level       Level    @relation(fields: [levelId], references: [id])
+  title       String   @db.VarChar(150)
+  description String?  @db.VarChar(500)
+  sequence    Int
+  status      String   @default("draft") @db.VarChar(20) // TODO: same status enum question as Level
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deleted     Boolean  @default(false)
+
+  lessons     Lesson[]
+
+  @@map("modules")
+}
+
+model Lesson {
+  id          Int   @id @default(autoincrement())
+  moduleId    Int
+  module      Module   @relation(fields: [moduleId], references: [id])
+  title       String   @db.VarChar(150)
+  description String?  @db.VarChar(500)
+  sequence    Int
+  mediaRef    String?  @db.VarChar(255) // TODO: URL, storage key, or FK to a media table?
+  status      String   @default("draft") @db.VarChar(20)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deleted     Boolean  @default(false)
+
+  quizzes     Quiz[]
+  progress    LearnerProgress[]
+
+  @@map("lessons")
+}
+
+model Quiz {
+  id            Int   @id @default(autoincrement())
+  lessonId      Int?  // TODO: source says "lesson/module reference" — confirm quizzes attach to a Lesson, a Module, or either
+  lesson        Lesson?  @relation(fields: [lessonId], references: [id])
+  passThreshold Int      // TODO: percentage (0-100) or raw point total? affects Int vs Float
+  status        String   @default("draft") @db.VarChar(20)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  deleted       Boolean  @default(false)
+
+  questions     QuizQuestion[]
+  attempts      QuizAttempt[]
+
+  @@map("quizzes")
+}
+
+model QuizQuestion {
+  id           Int   @id @default(autoincrement())
+  quizId       Int
+  quiz         Quiz     @relation(fields: [quizId], references: [id])
+  questionType String   @db.VarChar(30) // TODO: enum? e.g. single_choice, multiple_choice, true_false
+  prompt       String?  @db.VarChar(500) // TODO: "prompt/media" — split into prompt text + mediaRef?
+  mediaRef     String?  @db.VarChar(255)
+  sequence     Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  options      QuizOption[]
+
+  @@map("quiz_questions")
+}
+
+model QuizOption {
+  id          Int   @id @default(autoincrement())
+  questionId  Int
+  question    QuizQuestion @relation(fields: [questionId], references: [id])
+  label       String?      @db.VarChar(255)
+  mediaRef    String?      @db.VarChar(255)
+  correctFlag Boolean      @default(false) // TODO: "correct_flag/score rule" — simple boolean, or Json for partial-credit scoring?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@map("quiz_options")
+}
+
+model QuizAttempt {
+  id          Int   @id @default(autoincrement())
+  learnerId   String
+  learner     LearnerProfile @relation(fields: [learnerId], references: [id])
+  quizId      Int
+  quiz        Quiz           @relation(fields: [quizId], references: [id])
+  score       Float?         // TODO: percentage or raw points?
+  startedAt   DateTime       @default(now())
+  completedAt DateTime?
+
+  @@map("quiz_attempts")
+}
+
+model LearnerProgress {
+  id          Int   @id @default(autoincrement())
+  learnerId   String
+  learner     LearnerProfile @relation(fields: [learnerId], references: [id])
+  lessonId    Int
+  lesson      Lesson         @relation(fields: [lessonId], references: [id])
+  status      String         @default("not_started") @db.VarChar(20) // TODO: enum not_started/in_progress/completed?
+  metadata    Json? // "score/metadata" — score kept here, or a separate score column?
+  completedAt DateTime?
+  syncRef     String?        @db.VarChar(255) // TODO: offline-sync id — string, or something more structured?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@unique([learnerId, lessonId]) // TODO: confirm one progress row per learner+lesson is correct
+  @@map("learner_progress")
+}
+
+// --- Dictionary, gamification & content governance --------------------------
+// Same status as the block above: draft, unreviewed data types, no migration
+// run yet.
+
+model Category {
+  id           Int        @id @default(autoincrement())
+  name         String     @db.VarChar(100)
+  categoryType String?    @db.VarChar(50) // TODO: "parent/category_type" — is this a taxonomy label, separate from the self-relation below?
+  parentId     Int?
+  parent       Category?  @relation("CategoryParent", fields: [parentId], references: [id])
+  children     Category[] @relation("CategoryParent")
+  status       String     @default("draft") @db.VarChar(20)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deleted      Boolean    @default(false)
+
+  entries      DictionaryEntry[]
+
+  @@map("categories")
+}
+
+model DictionaryEntry {
+  id          Int       @id @default(autoincrement())
+  gloss       String    @db.VarChar(150) // TODO: "gloss/title" — one field, or split gloss vs display title?
+  description String?   @db.VarChar(1000) // TODO: "description/usage note" — one field or two?
+  categoryId  Int?
+  category    Category? @relation(fields: [categoryId], references: [id])
+  mediaRef    String?   @db.VarChar(255)
+  status      String    @default("draft") @db.VarChar(20)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deleted     Boolean   @default(false)
+
+  @@map("dictionary_entries")
+}
+
+model Favourite {
+  learnerId  String
+  learner    LearnerProfile @relation(fields: [learnerId], references: [id])
+  entityType String         @db.VarChar(50) // TODO: which entities can be favourited? (DictionaryEntry, Lesson, ...)
+  entityId   String         @db.VarChar(36) // TODO: stored as string — favouritable entities mix Int and uuid ids, so this can't be a real FK
+  createdAt  DateTime       @default(now())
+
+  @@id([learnerId, entityType, entityId])
+  @@map("favourites")
+}
+
+model Badge {
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(500)
+  criteria    Json? // TODO: "criteria/configuration" — rules/config for earning the badge
+  status      String   @default("draft") @db.VarChar(20)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deleted     Boolean  @default(false)
+
+  learners    LearnerBadge[]
+
+  @@map("badges")
+}
+
+model LearnerBadge {
+  learnerId String
+  learner   LearnerProfile @relation(fields: [learnerId], references: [id])
+  badgeId   Int
+  badge     Badge          @relation(fields: [badgeId], references: [id])
+  earnedAt  DateTime       @default(now())
+
+  @@id([learnerId, badgeId])
+  @@map("learner_badges")
+}
+
+model LearnerActivity {
+  id           Int            @id @default(autoincrement())
+  learnerId    String
+  learner      LearnerProfile @relation(fields: [learnerId], references: [id])
+  activityDate DateTime       @db.Date // TODO: "activity_date/event" — a calendar date, an event name, or both?
+  event        String?        @db.VarChar(50)
+  points       Int?           @default(0)
+  streakState  Json? // TODO: "points/streak state" — current streak count, longest streak, etc.
+  createdAt    DateTime       @default(now())
+
+  @@unique([learnerId, activityDate]) // TODO: confirm one row per learner per day
+  @@map("learner_activity")
+}
+
+model MediaAsset {
+  id         Int      @id @default(autoincrement())
+  storageRef String   @db.VarChar(255)
+  type       String   @db.VarChar(30) // TODO: enum? image/audio/video
+  duration   Int? // TODO: seconds — relevant only for audio/video, in seconds or ms?
+  size       Int? // TODO: bytes — large uploads may need BigInt instead of Int
+  format     String?  @db.VarChar(20) // TODO: e.g. mp4, webm, jpg
+  status     String   @default("draft") @db.VarChar(20)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deleted    Boolean  @default(false)
+
+  @@map("media_assets")
+}
+
+model ContentValidation {
+  id          Int       @id @default(autoincrement())
+  contentType String    @db.VarChar(50) // TODO: which content types get validated? (Lesson, DictionaryEntry, Quiz, ...)
+  contentId   String    @db.VarChar(36) // TODO: stored as string — validated content types mix Int and uuid ids, so this can't be a real FK
+  validatorId String
+  validator   User      @relation(fields: [validatorId], references: [id])
+  decision    String    @db.VarChar(20) // TODO: enum? e.g. approved/rejected/pending
+  comments    String?   @db.VarChar(1000)
+  reviewedAt  DateTime?
+
+  @@map("content_validations")
+}
+
+model ContentRevision {
+  id          Int      @id @default(autoincrement())
+  contentType String   @db.VarChar(50)
+  contentId   String   @db.VarChar(36) // TODO: same mixed-id-type caveat as ContentValidation.contentId
+  version     Int
+  authorId    String
+  author      User     @relation(fields: [authorId], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@map("content_revisions")
+}
+
+model AuditLog {
+  id         BigInt   @id @default(autoincrement()) // TODO: BigInt for high write volume — confirm vs plain Int
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id]) // TODO: nullable to allow system/automated actions with no actor?
+  action     String   @db.VarChar(100)
+  entityType String   @db.VarChar(50)
+  entityId   String   @db.VarChar(36) // TODO: mixed id types across entities, stored as string
+  timestamp  DateTime @default(now())
+  metadata   Json?
+
+  @@map("audit_logs")
 }
