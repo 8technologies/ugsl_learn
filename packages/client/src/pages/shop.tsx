@@ -390,7 +390,7 @@ const Shop: NextPage = () => {
               <section className="flex flex-col gap-3">
                 <h3 className="text-lg font-bold">Duo Plushie</h3>
                 <p className="text-sm text-gray-500">
-                  {`Celebrate Duolingo's 10 year anniversary with a new exclusive Duo plushie!`}
+                  {`Celebrate UGSL Learn's 10 year anniversary with a new exclusive Duo plushie!`}
                 </p>
                 <button className="flex w-fit items-center gap-1 rounded-2xl border-2 border-b-4 border-gray-300 bg-white px-4 py-3 text-sm font-bold uppercase text-red-500">
                   $29.99

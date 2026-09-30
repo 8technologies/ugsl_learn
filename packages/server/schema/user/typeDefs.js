@@ -7,6 +7,8 @@ const userTypeDefs = `#graphql
     username: String!
     name: String!
     password: String!
+    roleId: String
+    role: Role
     createdAt: String!
     updatedAt: String!
   }
@@ -20,13 +22,23 @@ const userTypeDefs = `#graphql
     Image: Upload
   } 
 
+  input RegisterInput {
+    email: String!
+    username: String!
+    name: String!
+    password: String!
+  } 
+
   input UpdateUserInput {
     email: String
     name: String
+    username: String
+    roleId: String
+    password: String
   }
 
   extend type Query {
-    users(limit: Int = 20, offset: Int = 0): [User!]!
+    users(limit: Int = 20, offset: Int = 0, search: String, roleId: String): [User!]!
     user(id: ID!): User
   }
 
@@ -34,7 +46,7 @@ const userTypeDefs = `#graphql
         login(email: String!, password: String!) :UserLoginResponse!
         changeMyPassword(newPassword: String!): UserLoginResponse!
         createUser(input: CreateUserInput!): User!
-        # register(payload: RegisterInput!): UserResponse!
+        register(payload: RegisterInput!): UserResponse!
         updateUser(id: ID!, input: UpdateUserInput!): User!
         deleteUser(id: ID!): ResponseMessage!
         toggleUserStatus(id: ID!): UserResponse!

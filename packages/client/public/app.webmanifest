@@ -1,11 +1,11 @@
 {
-  "name": "React Duolingo Clone",
+  "name": "React UGSL Learn Clone",
   "short_name": "Duoclone",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0A0",
   "theme_color": "#0A0",
-  "description": "A React Duolingo clone web app written with React, TypeScript, Next.js, TailwindCSS, and Zustand.",
+  "description": "A React UGSL Learn clone web app written with React, TypeScript, Next.js, TailwindCSS, and Zustand.",
   "icons": [
     {
       "src": "/favicon-16x16.png",

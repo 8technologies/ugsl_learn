@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { useRouter } from "next/router";
 import type { ComponentProps } from "react";
 import React, { useState } from "react";
 import type { Tab } from "./BottomBar";
@@ -7,6 +8,36 @@ import type { LoginScreenState } from "./LoginScreen";
 import { LoginScreen } from "./LoginScreen";
 import { GlobeIconSvg, PodcastIconSvg } from "./Svgs";
 import { useBoundStore } from "~/hooks/useBoundStore";
+
+const AdminIconSvg = (props: ComponentProps<"svg">) => (
+  <svg width="46" height="46" viewBox="0 0 46 46" fill="none" {...props}>
+    <path
+      d="M23 4L38 10V21C38 30.3888 31.6112 38.8114 23 41C14.3888 38.8114 8 30.3888 8 21V10L23 4Z"
+      fill="#7C93FF"
+    />
+    <path
+      opacity="0.3"
+      d="M23 4L38 10V21C38 30.3888 31.6112 38.8114 23 41V4Z"
+      fill="white"
+    />
+    <path
+      d="M20.5 27L15 21.5L17.1213 19.3787L20.5 22.7574L28.8787 14.3787L31 16.5L20.5 27Z"
+      fill="white"
+    />
+  </svg>
+);
+
+const ChevronDownSvg = (props: ComponentProps<"svg">) => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" {...props}>
+    <path
+      d="M6 9l6 6 6-6"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
 
 const LeftBarMoreMenuSvg = (props: ComponentProps<"svg">) => {
   return (
@@ -27,10 +58,12 @@ const LeftBarMoreMenuSvg = (props: ComponentProps<"svg">) => {
 };
 
 export const LeftBar = ({ selectedTab }: { selectedTab: Tab | null }) => {
+  const router = useRouter();
   const loggedIn = useBoundStore((x) => x.loggedIn);
   const logOut = useBoundStore((x) => x.logOut);
 
   const [moreMenuShown, setMoreMenuShown] = useState(false);
+  const [adminMenuOpen, setAdminMenuOpen] = useState(selectedTab === "Admin");
   const [loginScreenState, setLoginScreenState] =
     useState<LoginScreenState>("HIDDEN");
 
@@ -69,6 +102,53 @@ export const LeftBar = ({ selectedTab }: { selectedTab: Tab | null }) => {
               </li>
             );
           })}
+          {loggedIn && (
+            <li className="flex flex-col">
+              <button
+                type="button"
+                onClick={() => setAdminMenuOpen((x) => !x)}
+                className={[
+                  "flex grow items-center gap-3 rounded-xl px-2 py-1 text-sm font-bold uppercase",
+                  selectedTab === "Admin"
+                    ? "text-blue-400"
+                    : "text-gray-400 hover:bg-gray-100",
+                ].join(" ")}
+              >
+                <AdminIconSvg />
+                <span className="sr-only flex-1 text-left lg:not-sr-only">
+                  Admin
+                </span>
+                <ChevronDownSvg
+                  className={[
+                    "hidden transition-transform lg:block",
+                    adminMenuOpen ? "rotate-180" : "",
+                  ].join(" ")}
+                />
+              </button>
+              {adminMenuOpen && (
+                <ul className="ml-4 mt-1 hidden flex-col gap-1 border-l-2 border-gray-100 pl-4 lg:flex">
+                  {[
+                    { name: "Users", href: "/admin/users" },
+                    { name: "Roles", href: "/admin/roles" },
+                  ].map((item) => (
+                    <li key={item.href}>
+                      <Link
+                        href={item.href}
+                        className={[
+                          "block rounded-xl px-2 py-1 text-sm font-bold uppercase",
+                          router.pathname === item.href
+                            ? "text-blue-400"
+                            : "text-gray-400 hover:bg-gray-100",
+                        ].join(" ")}
+                      >
+                        {item.name}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          )}
           <div
             className="relative flex grow cursor-default items-center gap-3 rounded-xl px-2 py-1 font-bold uppercase text-gray-400 hover:bg-gray-100"
             onClick={() => setMoreMenuShown((x) => !x)}

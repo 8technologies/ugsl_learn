@@ -1,50 +1,30 @@
-// import { db } from "../../config/config.js";
 import { GraphQLError } from "graphql";
 import saveData from "../../utils/db/saveData.js";
+import { db } from "../../config/database.js";
 import { JSONResolver } from "graphql-scalars";
 import tryParseJSON from "../../helpers/tryParseJSON.js";
 // import checkPermission from "../../helpers/checkPermission.js";
 import requireAnyPermission from "../../helpers/requireAnyPermission.js";
 
-// export const getRoles = async ({ id, role_name, db }) => {
-//   try {
-//     let values = [];
-//     let where = "";
+export const getRoles = async ({ id, role_name } = {}) => {
+  try {
+    const where = { deleted: false };
+    if (id) where.id = id;
+    if (role_name) where.name = role_name;
 
-//     if (id || id === 0) {
-//       where += " AND r.id = ?";
-//       values.push(id);
-//     }
-
-//     if (role_name) {
-//       where += " AND r.name = ?";
-//       values.push(role_name);
-//     }
-//     let sql = `SELECT r.* FROM roles AS r WHERE deleted = 0 ${where} ORDER BY r.id DESC`;
-
-//     const [results] = await db.execute(sql, values);
-
-//     return results;
-//   } catch (error) {
-//     console.log("error", error);
-//      throw new Error(`Failed to fetch seed labels: ${error.message}`);
-//     // throw new GraphQLError("Error fetching roles");
-//   }
-// };
+    return await db.role.findMany({
+      where,
+      orderBy: { id: "desc" },
+    });
+  } catch (error) {
+    throw new GraphQLError(`Failed to fetch roles: ${error.message}`);
+  }
+};
 
 const roleResolvers = {
   JSON: JSONResolver,
   Query: {
-    roles: async (_parent, _args, { db }) => {
-      return db.role.findMany({
-        where: {
-          deleted: false,
-        },
-        orderBy: {
-          id: "desc",
-        },
-      });
-    },
+    roles: async () => getRoles(),
   },
   Mutation: {
     saveRole: async (parent, args, context) => {

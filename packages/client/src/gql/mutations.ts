@@ -1,84 +1,95 @@
 import { gql } from "@apollo/client";
 
-const LOGIN = gql`
-  mutation Login($username: String!, $password: String!) {
-    login(username: $username, password: $password) {
+export const LOGIN = gql`
+  mutation Login($email: String!, $password: String!) {
+    login(email: $email, password: $password) {
       success
       message
       token
       user {
         id
+        email
         username
         name
-        # staff_number
-        email
-        district
-        phone_number
-        image
-        role_id
-        role_name
-        created_at
-        updated_at
       }
     }
   }
 `;
 
-const SIGNUP = gql`
-  mutation CreateUser($payload: CreateUserInput!) {
-    createUser(payload: $payload) {
-      message
+export const REGISTER = gql`
+  mutation Register($payload: RegisterInput!) {
+    register(payload: $payload) {
       success
+      message
       user {
         id
+        email
         username
         name
-        # staff_number
-        phone_number
-        email
-        district
-        image
       }
     }
   }
 `;
 
-// Alias for clarity in user management module
-const CREATE_USER = SIGNUP;
-
-const DELETE_USER = gql`
-  mutation DeleteUser($userId: String!) {
-    deleteUser(user_id: $userId) {
-      success
-      message
-    }
-  }
-`;
-
-const ADD_ROLE = gql`
-  mutation SaveRole {
-  saveRole(
-    payload: { role_name, description, id }
-  ) {
-    data {
-      description
+export const CREATE_USER = gql`
+  mutation CreateUser($input: CreateUserInput!) {
+    createUser(input: $input) {
       id
+      email
+      username
       name
-      permissions
+      roleId
+      role {
+        id
+        name
+      }
+      createdAt
     }
   }
-}
 `;
-const UPDATE_ROLE_PERMISSIONS = gql`
-  mutation UpdateRolePermissions($payload: RolePermissionInput!) {
-    updateRolePermissions(payload: $payload) {
+
+export const UPDATE_USER = gql`
+  mutation UpdateUser($id: ID!, $input: UpdateUserInput!) {
+    updateUser(id: $id, input: $input) {
+      id
+      email
+      username
+      name
+      roleId
+      role {
+        id
+        name
+      }
+      updatedAt
+    }
+  }
+`;
+
+export const DELETE_USER = gql`
+  mutation DeleteUser($id: ID!) {
+    deleteUser(id: $id) {
       success
       message
     }
   }
 `;
 
-const DELETE_ROLE = gql`
+export const SAVE_ROLE = gql`
+  mutation SaveRole($payload: RoleInput!) {
+    saveRole(payload: $payload) {
+      success
+      message
+      data {
+        id
+        name
+        description
+        permissions
+      }
+    }
+  }
+`;
+
+export const DELETE_ROLE = gql`
   mutation DeleteRole($roleId: ID!) {
     deleteRole(role_id: $roleId) {
       success
@@ -87,37 +98,11 @@ const DELETE_ROLE = gql`
   }
 `;
 
-const CREATE_DISABILITY = gql`
-  mutation CreateDisability($payload: DisabilityInput!) {
-  createDisability(payload: $payload) {
-    success
-    message
-    disability {
-      id
-      name
-      photo_id
-      description
-      created_at
-      updated_at
+export const UPDATE_ROLE_PERMISSIONS = gql`
+  mutation UpdateRolePermissions($payload: RolePermissionInput!) {
+    updateRolePermissions(payload: $payload) {
+      success
+      message
     }
   }
-}
-  `;
-
-const DELETE_DISABILITY = gql`
-  mutation DeleteDisability($id: ID!) {
-    deleteDisability(id: $id)
-  }
 `;
-
-
-export { LOGIN, 
-  SIGNUP, 
-  CREATE_USER,
-  DELETE_USER,
-  ADD_ROLE, 
-  DELETE_ROLE,
-  UPDATE_ROLE_PERMISSIONS,
-  CREATE_DISABILITY,
-  DELETE_DISABILITY
-};

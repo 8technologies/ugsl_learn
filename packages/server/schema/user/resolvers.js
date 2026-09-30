@@ -3,6 +3,8 @@ import checkPasswordStrength from "../../helpers/password_strength.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { PRIVATE_KEY } from "../../config/config.js";
+import { db } from "../../config/database.js";
+import { getRoles } from "../role/resolvers.js";
 
 function badInput(message) {
   return new GraphQLError(message, { extensions: { code: "BAD_USER_INPUT" } });
@@ -19,16 +21,14 @@ async function  userData(input) {
   if (input.email !== undefined) {
     if (typeof input.email !== "string") throw badInput("Email is required.");
     data.email = input.email.trim().toLowerCase();
-    if (data.email.length > 191 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
-      throw badInput("Enter a valid email address (up to 191 characters).");
-    }
+    // if ( !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
+    //   throw badInput("Enter a valid email address (up to 191 characters).");
+    // }
   }
   if (input.username !== undefined) {
     if (typeof input.username !== "string") throw badInput("Username is required.");
     data.username = input.username.trim().toLowerCase();
-    // if (data.email.length > 191 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
-    //   throw badInput("Enter a valid email address (up to 191 characters).");
-    // }
+    
   }
   if (input.roleId){
     data.roleId = input.roleId;
@@ -110,14 +110,52 @@ async function loginUser ({ email, password, user_id, context }) {
     throw new GraphQLError(error.message);
   }
 };
+ 
+export const getUsers = async ({
+  limit = 10,
+  offset = 0,
+  email,
+  id,
+  username,
+  role_id,
+  role_name,
+  search,
+}) => {
+  try {
+    const where = { deleted: false };
+
+    if (email) where.email = email;
+    if (id) where.id = id;
+    if (username) where.username = username;
+    if (role_id) where.roleId = role_id;
+    if (role_name) where.role = { name: role_name };
+    if (search) {
+      where.OR = [
+        { username: { contains: search } },
+        { name: { contains: search } },
+        { email: { contains: search } },
+      ];
+    }
+
+    return await db.user.findMany({
+      where,
+      take: limit,
+      skip: offset,
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+    });
+  } catch (error) {
+    throw new GraphQLError(error.message);
+  }
+};
+
 
 const userResolvers = {
   Query: {
-    users: (_parent, { limit, offset }, { db }) => {
+    users: (_parent, { limit, offset, search, roleId }) => {
       if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isInteger(offset) || offset < 0) {
         throw badInput("Limit must be 1–100 and offset must be zero or greater.");
       }
-      return db.user.findMany({ take: limit, skip: offset, orderBy: [{ createdAt: "desc" }, { id: "asc" }] });
+      return getUsers({ limit, offset, search, role_id: roleId });
     },
     user: (_parent, { id }, { db }) => db.user.findUnique({ where: { id } }),
   },
@@ -136,6 +174,48 @@ const userResolvers = {
       return result;
     },
 
+    //learner signup
+    register: async (_parent, args) => {
+      try {
+        const { email, username, name, password } = args.payload;
+
+        const normalizedEmail = String(email || "").trim().toLowerCase();
+        const [existingByEmail] = await getUsers({ email: normalizedEmail, limit: 1 });
+        if (existingByEmail) {
+          throw new GraphQLError("A user with this email already exists.", {
+            extensions: { code: "CONFLICT" },
+          });
+        }
+
+        const normalizedUsername = String(username || "").trim().toLowerCase();
+        const [existingByUsername] = await getUsers({ username: normalizedUsername, limit: 1 });
+        if (existingByUsername) {
+          throw new GraphQLError("This username is already taken.", {
+            extensions: { code: "CONFLICT" },
+          });
+        }
+
+        const [learnerRole] = await getRoles({ role_name: "Learner" });
+        if (!learnerRole) {
+          throw new GraphQLError("The default learner role is not configured yet.");
+        }
+
+        const data = await userData({ email, username, name, password });
+        data.roleId = learnerRole.id;
+
+        const user = await writeUser(() => db.user.create({ data }));
+
+        return {
+          success: true,
+          message: "Account created successfully.",
+          user,
+        };
+      } catch (error) {
+        if (error instanceof GraphQLError) throw error;
+        throw new GraphQLError(error.message);
+      }
+    },
+
 
     updateUser: (_parent, { id, input }, { db }) =>
       writeUser(async () => db.user.update({ where: { id }, data: await userData(input) })),
@@ -147,6 +227,7 @@ const userResolvers = {
   User: {
     createdAt: (user) => user.createdAt.toISOString(),
     updatedAt: (user) => user.updatedAt.toISOString(),
+    role: (user) => (user.roleId ? db.role.findUnique({ where: { id: user.roleId } }) : null),
   },
 };
 

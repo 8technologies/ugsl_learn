@@ -2,22 +2,46 @@ import Link from "next/link";
 import { CloseSvg } from "./Svgs";
 import type { ComponentProps } from "react";
 import React, { useEffect, useRef, useState } from "react";
+import { useMutation } from "@apollo/client/react";
 import { useBoundStore } from "~/hooks/useBoundStore";
 import { useRouter } from "next/router";
+import { LOGIN, REGISTER } from "~/gql/mutations";
 
-export const FacebookLogoSvg = (props: ComponentProps<"svg">) => {
+type AuthUser = {
+  id: string;
+  email: string;
+  username: string;
+  name: string;
+};
+
+type LoginMutationResult = {
+  login: {
+    success: boolean;
+    message: string | null;
+    token: string;
+    user: AuthUser | null;
+  };
+};
+
+type RegisterMutationResult = {
+  register: {
+    success: boolean;
+    message: string | null;
+    user: AuthUser | null;
+  };
+};
+
+export const HexagonLogoSvg = (props: ComponentProps<"svg">) => {
   return (
-    <svg width="12" height="22" viewBox="0 0 12 22" {...props}>
-      <title>Fill 4</title>
-      <g stroke="none" strokeWidth="1" fill="none" fillRule="evenodd">
-        <g fill="#3C5A99">
-          <g>
-            <g>
-              <path d="M7.275 21.584v-9.845h3.305l.495-3.837h-3.8v-2.45c0-1.111.309-1.868 1.902-1.868l2.032-.001V.15C10.857.104 9.65 0 8.249 0c-2.93 0-4.936 1.788-4.936 5.072v2.83H0v3.837h3.313v9.845h3.962z" />
-            </g>
-          </g>
-        </g>
-      </g>
+    <svg viewBox="0 0 24 24" fill="none" {...props}>
+      <path
+        d="M12 2L21 7V17L12 22L3 17V7L12 2Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <path d="M3 7L12 12L21 7" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M12 12V22" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
     </svg>
   );
 };
@@ -73,13 +97,19 @@ export const LoginScreen = ({
 }) => {
   const router = useRouter();
   const loggedIn = useBoundStore((x) => x.loggedIn);
-  const logIn = useBoundStore((x) => x.logIn);
-  const setUsername = useBoundStore((x) => x.setUsername);
-  const setName = useBoundStore((x) => x.setName);
+  const setAuthenticatedUser = useBoundStore((x) => x.setAuthenticatedUser);
 
-  const [ageTooltipShown, setAgeTooltipShown] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const nameInputRef = useRef<null | HTMLInputElement>(null);
+  const usernameInputRef = useRef<null | HTMLInputElement>(null);
+  const emailInputRef = useRef<null | HTMLInputElement>(null);
+  const passwordInputRef = useRef<null | HTMLInputElement>(null);
+
+  const [login, { loading: loginLoading }] =
+    useMutation<LoginMutationResult>(LOGIN);
+  const [register, { loading: registerLoading }] =
+    useMutation<RegisterMutationResult>(REGISTER);
 
   useEffect(() => {
     if (loginScreenState !== "HIDDEN" && loggedIn) {
@@ -87,27 +117,95 @@ export const LoginScreen = ({
     }
   }, [loginScreenState, loggedIn, setLoginScreenState]);
 
-  const logInAndSetUserProperties = () => {
-    const name =
-      nameInputRef.current?.value.trim() || Math.random().toString().slice(2);
-    const username = name.replace(/ +/g, "-");
-    setUsername(username);
-    setName(name);
-    logIn();
-    void router.push("/learn");
+  const handleSubmit = async () => {
+    setErrorMessage(null);
+
+    const email = emailInputRef.current?.value.trim() ?? "";
+    const password = passwordInputRef.current?.value ?? "";
+
+    if (loginScreenState === "SIGNUP") {
+      const name = nameInputRef.current?.value.trim() ?? "";
+      const username = usernameInputRef.current?.value.trim() ?? "";
+
+      if (!name || !username || !email || !password) {
+        setErrorMessage("Fill in your name, username, email, and password.");
+        return;
+      }
+
+      try {
+        const { data: registerData } = await register({
+          variables: { payload: { name, username, email, password } },
+        });
+        const registerResult = registerData?.register;
+
+        if (!registerResult?.success) {
+          setErrorMessage(
+            registerResult?.message || "Could not create your account.",
+          );
+          return;
+        }
+
+        const { data: loginData } = await login({ variables: { email, password } });
+        const loginResult = loginData?.login;
+
+        if (!loginResult?.success || !loginResult.token || !loginResult.user) {
+          setErrorMessage("Account created — please log in.");
+          setLoginScreenState("LOGIN");
+          return;
+        }
+
+        setAuthenticatedUser({ token: loginResult.token, user: loginResult.user });
+        void router.push("/learn");
+      } catch (error) {
+        setErrorMessage(
+          error instanceof Error ? error.message : "Registration failed. Please try again.",
+        );
+      }
+      return;
+    }
+
+    if (!email || !password) {
+      setErrorMessage("Enter your email and password.");
+      return;
+    }
+
+    try {
+      const { data } = await login({ variables: { email, password } });
+      const result = data?.login;
+
+      if (!result?.success || !result.token || !result.user) {
+        setErrorMessage(result?.message || "Invalid email or password.");
+        return;
+      }
+
+      setAuthenticatedUser({ token: result.token, user: result.user });
+      void router.push("/learn");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Login failed. Please try again.",
+      );
+    }
+  };
+
+  const handleSocialLoginClick = () => {
+    setErrorMessage("Social login isn't available yet.");
   };
 
   return (
     <article
       className={[
-        "fixed inset-0 z-30 flex flex-col bg-white p-7 transition duration-300",
+        "fixed inset-0 z-30 flex flex-col bg-gray-50 p-8 transition duration-300",
         loginScreenState === "HIDDEN"
           ? "pointer-events-none opacity-0"
           : "opacity-100",
       ].join(" ")}
       aria-hidden={!loginScreenState}
     >
-      <header className="flex flex-row-reverse justify-between sm:flex-row">
+      <header className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-gray-800">
+          <HexagonLogoSvg className="h-8 w-8 text-blue-500" />
+          <span className="text-xl font-bold">UGSL Learn</span>
+        </div>
         <button
           className="flex text-gray-400"
           onClick={() => setLoginScreenState("HIDDEN")}
@@ -115,159 +213,91 @@ export const LoginScreen = ({
           <CloseSvg />
           <span className="sr-only">Close</span>
         </button>
-        <button
-          className="hidden rounded-2xl border-2 border-b-4 border-gray-200 px-4 py-3 text-sm font-bold uppercase text-blue-400 transition hover:bg-gray-50 hover:brightness-90 sm:block"
-          onClick={() =>
-            setLoginScreenState((x) => (x === "LOGIN" ? "SIGNUP" : "LOGIN"))
-          }
-        >
-          {loginScreenState === "LOGIN" ? "Sign up" : "Login"}
-        </button>
       </header>
       <div className="flex grow items-center justify-center">
-        <div className="flex w-full flex-col gap-5 sm:w-96">
-          <h2 className="text-center text-2xl font-bold text-gray-800">
-            {loginScreenState === "LOGIN" ? "Log in" : "Create your profile"}
+        <div className="w-full max-w-md rounded-2xl border border-gray-100 bg-white p-8 shadow-xl">
+          <p className="text-sm text-gray-400">Please enter your details</p>
+          <h2 className="mb-6 text-3xl font-bold text-gray-900">
+            {loginScreenState === "LOGIN" ? "Welcome back" : "Create your account"}
           </h2>
-          <div className="flex flex-col gap-2 text-black">
+          <div className="flex flex-col gap-4">
             {loginScreenState === "SIGNUP" && (
               <>
-                <div className="relative flex grow">
-                  <input
-                    className="grow rounded-2xl border-2 border-gray-200 bg-gray-50 px-4 py-3"
-                    placeholder="Age (optional)"
-                  />
-                  <div className="absolute bottom-0 right-0 top-0 flex items-center justify-center pr-4">
-                    <div
-                      className="relative flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border-2 border-gray-200 text-gray-400"
-                      onMouseEnter={() => setAgeTooltipShown(true)}
-                      onMouseLeave={() => setAgeTooltipShown(false)}
-                      onClick={() => setAgeTooltipShown((x) => !x)}
-                      role="button"
-                      tabIndex={0}
-                      aria-label="Why do you need an age?"
-                    >
-                      ?
-                      {ageTooltipShown && (
-                        <div className="absolute -right-5 top-full z-10 w-72 rounded-2xl border-2 border-gray-200 bg-white p-4 text-center text-xs leading-5 text-gray-800">
-                          Providing your age ensures you get the right Duolingo
-                          experience. For more details, please visit our{" "}
-                          <Link
-                            href="https://www.duolingo.com/privacy"
-                            className="text-blue-700"
-                          >
-                            Privacy Policy
-                          </Link>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
                 <input
-                  className="grow rounded-2xl border-2 border-gray-200 bg-gray-50 px-4 py-3"
-                  placeholder="Name (optional)"
+                  className="rounded-xl border border-gray-200 px-4 py-3 text-gray-900 placeholder:text-gray-400"
+                  placeholder="Name"
                   ref={nameInputRef}
+                />
+                <input
+                  className="rounded-xl border border-gray-200 px-4 py-3 text-gray-900 placeholder:text-gray-400"
+                  placeholder="Username"
+                  ref={usernameInputRef}
                 />
               </>
             )}
             <input
-              className="grow rounded-2xl border-2 border-gray-200 bg-gray-50 px-4 py-3"
-              placeholder={
-                loginScreenState === "LOGIN"
-                  ? "Email or username (optional)"
-                  : "Email (optional)"
-              }
+              className="rounded-xl border border-gray-200 px-4 py-3 text-gray-900 placeholder:text-gray-400"
+              placeholder="Email address"
+              type="email"
+              ref={emailInputRef}
             />
-            <div className="relative flex grow">
-              <input
-                className="grow rounded-2xl border-2 border-gray-200 bg-gray-50 px-4 py-3"
-                placeholder="Password (optional)"
-                type="password"
-              />
-              {loginScreenState === "LOGIN" && (
-                <div className="absolute bottom-0 right-0 top-0 flex items-center justify-center pr-5">
-                  <Link
-                    className="font-bold uppercase text-gray-400 hover:brightness-75"
-                    href="/forgot-password"
-                  >
-                    Forgot?
-                  </Link>
-                </div>
-              )}
-            </div>
+            <input
+              className="rounded-xl border border-gray-200 px-4 py-3 text-gray-900 placeholder:text-gray-400"
+              placeholder="Password"
+              type="password"
+              ref={passwordInputRef}
+            />
+            {loginScreenState === "LOGIN" && (
+              <div className="flex items-center justify-between text-sm">
+                <label className="flex items-center gap-2 text-gray-600">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-gray-300 text-blue-500"
+                  />
+                  Remember for 30 days
+                </label>
+                <Link
+                  className="font-medium text-blue-500 hover:underline"
+                  href="/forgot-password"
+                >
+                  Forgot password
+                </Link>
+              </div>
+            )}
+            {errorMessage && (
+              <p className="text-sm font-bold text-red-500">{errorMessage}</p>
+            )}
           </div>
           <button
-            className="rounded-2xl border-b-4 border-blue-500 bg-blue-400 py-3 font-bold uppercase text-white transition hover:brightness-110"
-            onClick={logInAndSetUserProperties}
+            className="mt-6 w-full rounded-xl bg-blue-500 py-3 font-semibold text-white transition hover:bg-blue-600 disabled:opacity-50"
+            onClick={() => void handleSubmit()}
+            disabled={loginLoading || registerLoading}
           >
-            {loginScreenState === "LOGIN" ? "Log in" : "Create account"}
+            {loginScreenState === "LOGIN"
+              ? loginLoading
+                ? "Logging in..."
+                : "Log in"
+              : registerLoading || loginLoading
+                ? "Creating account..."
+                : "Create account"}
           </button>
-          <div className="flex items-center gap-2">
-            <div className="h-[2px] grow bg-gray-300"></div>
-            <span className="font-bold uppercase text-gray-400">or</span>
-            <div className="h-[2px] grow bg-gray-300"></div>
-          </div>
-          <div className="flex gap-5">
+          <button
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 py-3 font-medium text-gray-700 transition hover:bg-gray-50"
+            onClick={handleSocialLoginClick}
+          >
+            <GoogleLogoSvg className="h-5 w-5" /> Sign in with Google
+          </button>
+          <p className="mt-6 text-center text-sm text-gray-500">
+            {loginScreenState === "LOGIN"
+              ? "Don't have an account?"
+              : "Have an account?"}{" "}
             <button
-              className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-b-4 border-gray-200 py-3 font-bold text-blue-900 transition hover:bg-gray-50 hover:brightness-90"
-              onClick={logInAndSetUserProperties}
-            >
-              <FacebookLogoSvg className="h-5 w-5" /> Facebook
-            </button>
-            <button
-              className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-b-4 border-gray-200 py-3 font-bold text-blue-600 transition hover:bg-gray-50 hover:brightness-90"
-              onClick={logInAndSetUserProperties}
-            >
-              <GoogleLogoSvg className="h-5 w-5" /> Google
-            </button>
-          </div>
-          <p className="text-center text-xs leading-5 text-gray-400">
-            By signing in to Duolingo, you agree to our{" "}
-            <Link
-              className="font-bold"
-              href="https://www.duolingo.com/terms?wantsPlainInfo=1"
-            >
-              Terms
-            </Link>{" "}
-            and{" "}
-            <Link
-              className="font-bold"
-              href="https://www.duolingo.com/privacy?wantsPlainInfo=1"
-            >
-              Privacy Policy
-            </Link>
-            .
-          </p>
-          <p className="text-center text-xs leading-5 text-gray-400">
-            This site is protected by reCAPTCHA Enterprise and the Google{" "}
-            <Link
-              className="font-bold"
-              href="https://policies.google.com/privacy"
-            >
-              Privacy Policy
-            </Link>{" "}
-            and{" "}
-            <Link
-              className="font-bold"
-              href="https://policies.google.com/terms"
-            >
-              Terms of Service
-            </Link>{" "}
-            apply.
-          </p>
-          <p className="block text-center sm:hidden">
-            <span className="text-sm font-bold text-gray-700">
-              {loginScreenState === "LOGIN"
-                ? "Don't have an account?"
-                : "Have an account?"}
-            </span>{" "}
-            <button
-              className="text-sm font-bold uppercase text-blue-400"
+              className="font-semibold text-blue-500 hover:underline"
               onClick={() =>
                 setLoginScreenState((x) => (x === "LOGIN" ? "SIGNUP" : "LOGIN"))
               }
             >
-              {loginScreenState === "LOGIN" ? "sign up" : "log in"}
+              {loginScreenState === "LOGIN" ? "Sign up" : "Log in"}
             </button>
           </p>
         </div>
