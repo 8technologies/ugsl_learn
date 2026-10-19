@@ -35,7 +35,9 @@ export const yoga = createYoga({
           try {
             await authenticateUser({ req: authReq });
           } catch (error) {
-            setResult({ errors: [error] });
+            // A stale token must not block public operations like login;
+            // they simply run without a signed-in user.
+            if (!publicOperation) setResult({ errors: [error] });
           }
         }
       },

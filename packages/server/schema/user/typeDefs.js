@@ -37,6 +37,12 @@ const userTypeDefs = `#graphql
     password: String
   }
 
+  # Fields a signed-in user may change on their own account
+  input UpdateMeInput {
+    name: String
+    username: String
+  }
+
   extend type Query {
     users(limit: Int = 20, offset: Int = 0, search: String, roleId: String): [User!]!
     user(id: ID!): User
@@ -47,7 +53,10 @@ const userTypeDefs = `#graphql
         changeMyPassword(newPassword: String!): UserLoginResponse!
         createUser(input: CreateUserInput!): User!
         register(payload: RegisterInput!): UserResponse!
+        verifyEmail(token: String!): ResponseMessage!
+        resendVerificationEmail(email: String!): ResponseMessage!
         updateUser(id: ID!, input: UpdateUserInput!): User!
+        updateMe(input: UpdateMeInput!): UserResponse!
         deleteUser(id: ID!): ResponseMessage!
         toggleUserStatus(id: ID!): UserResponse!
         requestPasswordResetLink(email: String!): UserResponse!

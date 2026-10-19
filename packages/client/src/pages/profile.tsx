@@ -1,207 +1,300 @@
 import type { NextPage } from "next";
-import { BottomBar } from "~/components/BottomBar";
-import { LeftBar } from "~/components/LeftBar";
-import {
-  BronzeLeagueSvg,
-  EditPencilSvg,
-  EmptyFireSvg,
-  FireSvg,
-  LightningProgressSvg,
-  EmptyMedalSvg,
-  ProfileFriendsSvg,
-  ProfileTimeJoinedSvg,
-  SettingsGearSvg,
-} from "~/components/Svgs";
-import Link from "next/link";
-import { Flag } from "~/components/Flag";
-import { useBoundStore } from "~/hooks/useBoundStore";
-import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
+import React, { useEffect, useState } from "react";
+import { useMutation, useQuery } from "@apollo/client/react";
+import { toast } from "sonner";
+import { Flame, Heart, LogOut, Trophy, Zap } from "lucide-react";
+import { AppShell } from "~/components/AppShell";
+import {
+  HEARING_STATUS_OPTIONS,
+  LANGUAGE_OPTIONS,
+} from "~/components/CompleteProfilePrompt";
+import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
+import { useBoundStore } from "~/hooks/useBoundStore";
+import { useLogout } from "~/hooks/useLogout";
+import { MY_PROFILE } from "~/gql/queries";
+import { SAVE_LEARNER, UPDATE_ME } from "~/gql/mutations";
 
-const Profile: NextPage = () => {
-  return (
-    <div>
-      <ProfileTopBar />
-      <LeftBar selectedTab="Profile" />
-      <div className="flex justify-center gap-3 pt-14 md:ml-24 lg:ml-64 lg:gap-12">
-        <div className="flex w-full max-w-4xl flex-col gap-5 p-5">
-          <ProfileTopSection />
-          <ProfileStatsSection />
-          <ProfileFriendsSection />
-        </div>
-      </div>
-      <div className="pt-[90px]"></div>
-      <BottomBar selectedTab="Profile" />
-    </div>
-  );
+type MyProfileResult = {
+  user: {
+    id: string;
+    email: string;
+    username: string;
+    name: string;
+    createdAt: string;
+    role: { id: string; name: string } | null;
+  } | null;
+  learner: {
+    id: string;
+    hearingStatus: string | null;
+    preferredLanguage: string | null;
+    stats: {
+      totalXp: number;
+      currentStreak: number;
+      longestStreak: number;
+      hearts: number;
+    } | null;
+  } | null;
 };
 
-export default Profile;
-
-const ProfileTopBar = () => {
-  return (
-    <div className="fixed left-0 right-0 top-0 flex h-16 items-center justify-between border-b-2 border-gray-200 bg-white px-5 text-xl font-bold text-gray-300 md:hidden">
-      <div className="invisible" aria-hidden={true}>
-        <SettingsGearSvg />
-      </div>
-      <span className="text-gray-400">Profile</span>
-      <Link href="/settings/account">
-        <SettingsGearSvg />
-        <span className="sr-only">Settings</span>
-      </Link>
-    </div>
-  );
+type UpdateMeResult = {
+  updateMe: {
+    success: boolean;
+    message: string | null;
+    user: { id: string; email: string; username: string; name: string } | null;
+  };
 };
 
-const ProfileTopSection = () => {
+type SaveLearnerResult = {
+  SaveLearner: { success: boolean; message: string | null };
+};
+
+const selectClass =
+  "w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-orange-500 focus:outline-none";
+
+const labelFor = (options: { value: string; label: string }[], value?: string | null) =>
+  options.find((o) => o.value === value)?.label ?? "Not set";
+
+const errorText = (error: unknown) =>
+  error instanceof Error ? error.message : "Something went wrong. Please try again.";
+
+const Card = ({ title, children }: { title: string; children: React.ReactNode }) => (
+  <section className="rounded-2xl border border-gray-200 bg-white p-6">
+    <h2 className="mb-4 text-lg font-bold text-gray-900">{title}</h2>
+    {children}
+  </section>
+);
+
+const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div>
+    <label className="mb-2 block text-sm font-medium text-gray-700">{label}</label>
+    {children}
+  </div>
+);
+
+const ProfilePage: NextPage = () => {
   const router = useRouter();
   const loggedIn = useBoundStore((x) => x.loggedIn);
-  const name = useBoundStore((x) => x.name);
-  const username = useBoundStore((x) => x.username);
-  const joinedAt = useBoundStore((x) => x.joinedAt).format("MMMM YYYY");
-  const followingCount = 0;
-  const followersCount = 0;
-  const language = useBoundStore((x) => x.language);
+  const hasHydrated = useBoundStore((x) => x.hasHydrated);
+  const userId = useBoundStore((x) => x.id);
+  const token = useBoundStore((x) => x.token);
+  const setAuthenticatedUser = useBoundStore((x) => x.setAuthenticatedUser);
+  const logout = useLogout();
 
   useEffect(() => {
-    if (!loggedIn) {
-      void router.push("/");
+    if (hasHydrated && !loggedIn) void router.replace("/login");
+  }, [hasHydrated, loggedIn, router]);
+
+  const { data, loading, refetch } = useQuery<MyProfileResult>(MY_PROFILE, {
+    variables: { userId },
+    skip: !userId,
+    fetchPolicy: "network-only",
+  });
+  const [updateMe, { loading: savingAccount }] = useMutation<UpdateMeResult>(UPDATE_ME);
+  const [saveLearner, { loading: savingLearner }] = useMutation<SaveLearnerResult>(SAVE_LEARNER);
+
+  const user = data?.user;
+  const learner = data?.learner;
+  const isLearner = user?.role?.name?.toLowerCase() === "learner";
+
+  const [account, setAccount] = useState({ name: "", username: "" });
+  const [learnerForm, setLearnerForm] = useState({ hearingStatus: "", preferredLanguage: "en" });
+
+  // Fill the forms once the profile loads
+  useEffect(() => {
+    if (user) setAccount({ name: user.name, username: user.username });
+  }, [user?.name, user?.username]);
+  useEffect(() => {
+    setLearnerForm({
+      hearingStatus: learner?.hearingStatus ?? "",
+      preferredLanguage: learner?.preferredLanguage ?? "en",
+    });
+  }, [learner?.hearingStatus, learner?.preferredLanguage]);
+
+  if (!hasHydrated || !loggedIn) return null;
+
+  const accountChanged =
+    !!user && (account.name.trim() !== user.name || account.username.trim() !== user.username);
+
+  const handleAccountSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !accountChanged) return;
+    try {
+      const { data: result } = await updateMe({
+        variables: {
+          input: {
+            ...(account.name.trim() !== user.name ? { name: account.name } : {}),
+            ...(account.username.trim() !== user.username ? { username: account.username } : {}),
+          },
+        },
+      });
+      const updated = result?.updateMe.user;
+      if (!result?.updateMe.success || !updated) {
+        toast.error(result?.updateMe.message || "Could not update your account.");
+        return;
+      }
+      // Keep the sidebar and stored session in sync with the new name
+      if (token) setAuthenticatedUser({ token, user: updated });
+      toast.success("Account updated");
+      await refetch();
+    } catch (error) {
+      toast.error(errorText(error));
     }
-  }, [loggedIn, router]);
+  };
+
+  const handleLearnerSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!learnerForm.hearingStatus) {
+      toast.error("Select your hearing status.");
+      return;
+    }
+    try {
+      const { data: result } = await saveLearner({
+        variables: { input: { id: learner?.id, ...learnerForm } },
+      });
+      if (!result?.SaveLearner.success) {
+        toast.error(result?.SaveLearner.message || "Could not save your learner profile.");
+        return;
+      }
+      toast.success("Learner profile saved");
+      await refetch();
+    } catch (error) {
+      toast.error(errorText(error));
+    }
+  };
+
+  const stats = learner?.stats;
+  const statTiles = [
+    { label: "Total XP", value: stats?.totalXp ?? 0, icon: Zap },
+    { label: "Day streak", value: stats?.currentStreak ?? 0, icon: Flame },
+    { label: "Longest streak", value: stats?.longestStreak ?? 0, icon: Trophy },
+    { label: "Hearts", value: stats?.hearts ?? 5, icon: Heart },
+  ];
+
+  const initial = (user?.name || user?.username || "?").charAt(0).toUpperCase();
+  const joined = user?.createdAt
+    ? new Date(user.createdAt).toLocaleDateString(undefined, { month: "long", year: "numeric" })
+    : null;
 
   return (
-    <section className="flex flex-row-reverse border-b-2 border-gray-200 pb-8 md:flex-row md:gap-8">
-      <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-dashed border-gray-400 text-3xl font-bold text-gray-400 md:h-44 md:w-44 md:text-7xl">
-        {username.charAt(0).toUpperCase()}
-      </div>
-      <div className="flex grow flex-col justify-between gap-3">
-        <div className="flex flex-col gap-2">
-          <div>
-            <h1 className="text-2xl font-bold">{name}</h1>
-            <div className="text-sm text-gray-400">{username}</div>
+    <AppShell>
+      <div className="mx-auto flex max-w-4xl flex-col gap-6">
+        <section className="flex flex-col gap-5 rounded-2xl bg-[#2b2f5c] p-6 text-white sm:flex-row sm:items-center">
+          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-orange-500 text-3xl font-bold">
+            {initial}
           </div>
-          <div className="flex items-center gap-3">
-            <ProfileTimeJoinedSvg />
-            <span className="text-gray-500">{`Joined ${joinedAt}`}</span>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-2xl font-bold">{user?.name ?? (loading ? "Loading…" : "")}</h1>
+            <div className="text-sm text-indigo-200">@{user?.username}</div>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+              {user?.role && (
+                <span className="rounded-full bg-white/10 px-2.5 py-1">{user.role.name}</span>
+              )}
+              {joined && <span className="rounded-full bg-white/10 px-2.5 py-1">Joined {joined}</span>}
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <ProfileFriendsSvg />
-            <span className="text-gray-500">{`${followingCount} Following / ${followersCount} Followers`}</span>
-          </div>
-        </div>
-
-        <Flag language={language} width={40} />
-      </div>
-      <Link
-        href="/settings/account"
-        className="hidden items-center gap-2 self-start rounded-2xl border-b-4 border-blue-500 bg-blue-400 px-5 py-3 font-bold uppercase text-white transition hover:brightness-110 md:flex"
-      >
-        <EditPencilSvg />
-        Edit profile
-      </Link>
-    </section>
-  );
-};
-
-const ProfileStatsSection = () => {
-  const streak = useBoundStore((x) => x.streak);
-  const totalXp = 125;
-  const league = "Bronze";
-  const top3Finishes = 0;
-
-  return (
-    <section>
-      <h2 className="mb-5 text-2xl font-bold">Statistics</h2>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="flex gap-2 rounded-2xl border-2 border-gray-200 p-2 md:gap-3 md:px-6 md:py-4">
-          {streak === 0 ? <EmptyFireSvg /> : <FireSvg />}
-          <div className="flex flex-col">
-            <span
-              className={[
-                "text-xl font-bold",
-                streak === 0 ? "text-gray-400" : "",
-              ].join(" ")}
-            >
-              {streak}
-            </span>
-            <span className="text-sm text-gray-400 md:text-base">
-              Day streak
-            </span>
-          </div>
-        </div>
-        <div className="flex gap-2 rounded-2xl border-2 border-gray-200 p-2 md:gap-3 md:px-6 md:py-4">
-          <LightningProgressSvg size={35} />
-          <div className="flex flex-col">
-            <span className="text-xl font-bold">{totalXp}</span>
-            <span className="text-sm text-gray-400 md:text-base">Total XP</span>
-          </div>
-        </div>
-        <div className="flex gap-2 rounded-2xl border-2 border-gray-200 p-2 md:gap-3 md:px-6 md:py-4">
-          <BronzeLeagueSvg width={25} height={35} />
-          <div className="flex flex-col">
-            <span className="text-xl font-bold">{league}</span>
-            <span className="text-sm text-gray-400 md:text-base">
-              Current league
-            </span>
-          </div>
-        </div>
-        <div className="flex gap-2 rounded-2xl border-2 border-gray-200 p-2 md:gap-3 md:px-6 md:py-4">
-          {top3Finishes === 0 ? <EmptyMedalSvg /> : <EmptyMedalSvg />}
-          <div className="flex flex-col">
-            <span
-              className={[
-                "text-xl font-bold",
-                top3Finishes === 0 ? "text-gray-400" : "",
-              ].join(" ")}
-            >
-              {top3Finishes}
-            </span>
-            <span className="text-sm text-gray-400 md:text-base">
-              Top 3 finishes
-            </span>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-};
-
-const ProfileFriendsSection = () => {
-  const [state, setState] = useState<"FOLLOWING" | "FOLLOWERS">("FOLLOWING");
-  return (
-    <section>
-      <h2 className="mb-5 text-2xl font-bold">Friends</h2>
-      <div className="rounded-2xl border-2 border-gray-200">
-        <div className="flex">
           <button
-            className={[
-              "flex w-1/2 items-center justify-center border-b-2 py-3 font-bold uppercase hover:border-blue-400 hover:text-blue-400",
-              state === "FOLLOWING"
-                ? "border-blue-400 text-blue-400"
-                : "border-gray-200 text-gray-400",
-            ].join(" ")}
-            onClick={() => setState("FOLLOWING")}
+            type="button"
+            onClick={() => void logout()}
+            className="flex items-center gap-2 self-start rounded-xl border border-white/20 px-4 py-2 text-sm font-semibold transition hover:bg-white/10 sm:self-center"
           >
-            Following
+            <LogOut className="h-4 w-4" />
+            Log out
           </button>
-          <button
-            className={[
-              "flex w-1/2 items-center justify-center border-b-2 py-3 font-bold uppercase hover:border-blue-400 hover:text-blue-400",
-              state === "FOLLOWERS"
-                ? "border-blue-400 text-blue-400"
-                : "border-gray-200 text-gray-400",
-            ].join(" ")}
-            onClick={() => setState("FOLLOWERS")}
-          >
-            Followers
-          </button>
-        </div>
-        <div className="flex items-center justify-center py-10 text-center text-gray-500">
-          {state === "FOLLOWING"
-            ? "Not following anyone yet"
-            : "No followers yet"}
-        </div>
+        </section>
+
+        {isLearner && (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {statTiles.map(({ label, value, icon: Icon }) => (
+              <div key={label} className="rounded-xl border border-gray-200 bg-white px-5 py-4">
+                <Icon className="mb-2 h-5 w-5 text-orange-500" />
+                <div className="text-2xl font-bold text-gray-900">{value}</div>
+                <div className="text-xs font-medium text-gray-500">{label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <Card title="Account">
+          <form onSubmit={handleAccountSubmit} className="grid gap-4 sm:grid-cols-2">
+            <Field label="Full name">
+              <Input
+                value={account.name}
+                onChange={(e) => setAccount((prev) => ({ ...prev, name: e.target.value }))}
+                maxLength={100}
+                required
+              />
+            </Field>
+            <Field label="Username">
+              <Input
+                value={account.username}
+                onChange={(e) => setAccount((prev) => ({ ...prev, username: e.target.value }))}
+                required
+              />
+            </Field>
+            <Field label="Email">
+              <Input value={user?.email ?? ""} disabled readOnly />
+            </Field>
+            <div className="flex items-end justify-end">
+              <Button type="submit" disabled={!accountChanged || savingAccount}>
+                {savingAccount ? "Saving…" : "Save changes"}
+              </Button>
+            </div>
+          </form>
+        </Card>
+
+        {isLearner && (
+          <Card title="Learner profile">
+            <form onSubmit={handleLearnerSubmit} className="grid gap-4 sm:grid-cols-2">
+              <Field label="Hearing status">
+                <select
+                  className={selectClass}
+                  value={learnerForm.hearingStatus}
+                  onChange={(e) => setLearnerForm((prev) => ({ ...prev, hearingStatus: e.target.value }))}
+                  required
+                >
+                  <option value="" disabled>
+                    Select one
+                  </option>
+                  {HEARING_STATUS_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Preferred language">
+                <select
+                  className={selectClass}
+                  value={learnerForm.preferredLanguage}
+                  onChange={(e) =>
+                    setLearnerForm((prev) => ({ ...prev, preferredLanguage: e.target.value }))
+                  }
+                >
+                  {LANGUAGE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <p className="text-sm text-gray-500 sm:col-span-2">
+                {learner
+                  ? `Currently: ${labelFor(HEARING_STATUS_OPTIONS, learner.hearingStatus)} · ${labelFor(LANGUAGE_OPTIONS, learner.preferredLanguage)}`
+                  : "You haven't set up your learner profile yet."}
+              </p>
+              <div className="flex justify-end sm:col-span-2">
+                <Button type="submit" disabled={savingLearner}>
+                  {savingLearner ? "Saving…" : learner ? "Save learner profile" : "Create learner profile"}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        )}
       </div>
-    </section>
+    </AppShell>
   );
 };
+
+export default ProfilePage;

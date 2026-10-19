@@ -7,17 +7,19 @@ datasource db {
   provider = "mysql"
 }
 
-
 model User {
-  id        String   @id @default(uuid()) @db.VarChar(36)
-  email     String   @unique @db.VarChar(191)
-  username  String   @unique @db.VarChar(255)
-  name      String   @db.VarChar(100)
-  password  String   @db.VarChar(255)
-  image     String?  @db.VarChar(255)
+  id       String  @id @default(uuid()) @db.VarChar(36)
+  email    String  @unique @db.VarChar(191)
+  username String  @unique @db.VarChar(255)
+  name     String  @db.VarChar(100)
+  password String  @db.VarChar(255)
+  image    String? @db.VarChar(255)
 
-  roleId    String?
-  role      Role?    @relation(fields: [roleId], references: [id])
+  emailVerified   Boolean   @default(false)
+  emailVerifiedAt DateTime?
+
+  roleId String?
+  role   Role?   @relation(fields: [roleId], references: [id])
 
   learnerProfile LearnerProfile?
 
@@ -41,7 +43,7 @@ model Role {
   updatedAt   DateTime @updatedAt
   deleted     Boolean  @default(false)
 
-  users       User[]
+  users User[]
 
   @@map("roles")
 }
@@ -62,99 +64,117 @@ model LearnerProfile {
   updatedAt         DateTime @updatedAt
   deleted           Boolean  @default(false)
 
-  quizAttempts      QuizAttempt[]
-  progress          LearnerProgress[]
-  favourites        Favourite[]
-  badges            LearnerBadge[]
-  activity          LearnerActivity[]
+  quizAttempts     QuizAttempt[]
+  progress         LearnerProgress[]
+  favourites       Favourite[]
+  badges           LearnerBadge[]
+  activity         LearnerActivity[]
+  moduleProgress   LearnerModuleProgress[]
+  questionAttempts QuestionAttempt[]
+  stats            LearnerStats?
+  xpTransactions   XpTransaction[]
+  dailyChallenges  LearnerDailyChallenge[]
 
   @@map("learner_profiles")
 }
 
 model Level {
-  id        Int   @id @default(autoincrement())
-  name      String   @db.VarChar(100)
-  sequence  Int
-  status    String   @default("draft") @db.VarChar(20) // TODO: confirm allowed values (draft/published/archived?)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  deleted   Boolean  @default(false)
+  id          Int      @id @default(autoincrement())
+  name        String   @db.VarChar(100) @unique
+  description String?  @db.VarChar(500)
+  difficulty  String   @default("beginner") @db.VarChar(20) // beginner | intermediate | advanced
+  sequence    Int
+  status      String   @default("draft") @db.VarChar(20) // TODO: confirm allowed values (draft/published/archived?)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deleted     Boolean  @default(false)
 
-  modules   Module[]
+  modules Module[]
 
   @@map("levels")
 }
 
 model Module {
-  id          Int   @id @default(autoincrement())
-  levelId     Int
-  level       Level    @relation(fields: [levelId], references: [id])
-  title       String   @db.VarChar(150)
-  description String?  @db.VarChar(500)
-  sequence    Int
-  status      String   @default("draft") @db.VarChar(20) // TODO: same status enum question as Level
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  deleted     Boolean  @default(false)
+  id               Int      @id @default(autoincrement())
+  levelId          Int
+  level            Level    @relation(fields: [levelId], references: [id])
+  title            String   @db.VarChar(150)
+  description      String?  @db.VarChar(500)
+  sequence         Int
+  xpReward         Int      @default(50)
+  // Module that must be completed before this one unlocks
+  requiresModuleId Int?
+  requiresModule   Module?  @relation("ModulePrerequisite", fields: [requiresModuleId], references: [id])
+  unlocks          Module[] @relation("ModulePrerequisite")
+  status           String   @default("draft") @db.VarChar(20) // TODO: same status enum question as Level
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  deleted          Boolean  @default(false)
 
-  lessons     Lesson[]
+  lessons  Lesson[]
+  progress LearnerModuleProgress[]
 
   @@map("modules")
 }
 
 model Lesson {
-  id          Int   @id @default(autoincrement())
+  id          Int      @id @default(autoincrement())
   moduleId    Int
   module      Module   @relation(fields: [moduleId], references: [id])
   title       String   @db.VarChar(150)
   description String?  @db.VarChar(500)
   sequence    Int
   mediaRef    String?  @db.VarChar(255) // TODO: URL, storage key, or FK to a media table?
+  xpReward    Int      @default(20)
   status      String   @default("draft") @db.VarChar(20)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   deleted     Boolean  @default(false)
 
-  quizzes     Quiz[]
-  progress    LearnerProgress[]
+  quizzes  Quiz[]
+  progress LearnerProgress[]
 
   @@map("lessons")
 }
 
 model Quiz {
-  id            Int   @id @default(autoincrement())
-  lessonId      Int?  // TODO: source says "lesson/module reference" — confirm quizzes attach to a Lesson, a Module, or either
+  id            Int      @id @default(autoincrement())
+  lessonId      Int? // TODO: source says "lesson/module reference" — confirm quizzes attach to a Lesson, a Module, or either
   lesson        Lesson?  @relation(fields: [lessonId], references: [id])
-  passThreshold Int      // TODO: percentage (0-100) or raw point total? affects Int vs Float
+  passThreshold Int // TODO: percentage (0-100) or raw point total? affects Int vs Float
   status        String   @default("draft") @db.VarChar(20)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   deleted       Boolean  @default(false)
 
-  questions     QuizQuestion[]
-  attempts      QuizAttempt[]
+  questions QuizQuestion[]
+  attempts  QuizAttempt[]
 
   @@map("quizzes")
 }
 
 model QuizQuestion {
-  id           Int   @id @default(autoincrement())
-  quizId       Int
-  quiz         Quiz     @relation(fields: [quizId], references: [id])
-  questionType String   @db.VarChar(30) // TODO: enum? e.g. single_choice, multiple_choice, true_false
-  prompt       String?  @db.VarChar(500) // TODO: "prompt/media" — split into prompt text + mediaRef?
-  mediaRef     String?  @db.VarChar(255)
-  sequence     Int
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id            Int      @id @default(autoincrement())
+  quizId        Int
+  quiz          Quiz     @relation(fields: [quizId], references: [id])
+  questionType  String   @db.VarChar(30) // TODO: enum? e.g. watch_match, multiple_choice, sign_recall, video_record, fill_blank
+  prompt        String?  @db.VarChar(500) // TODO: "prompt/media" — split into prompt text + mediaRef?
+  mediaRef      String?  @db.VarChar(255)
+  sequence      Int
+  // Answer for question types that don't use QuizOption.correctFlag (sign id, text, etc.)
+  correctAnswer Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  options      QuizOption[]
+  options  QuizOption[]
+  signs    QuizQuestionSign[]
+  attempts QuestionAttempt[]
 
   @@map("quiz_questions")
 }
 
 model QuizOption {
-  id          Int   @id @default(autoincrement())
+  id          Int          @id @default(autoincrement())
   questionId  Int
   question    QuizQuestion @relation(fields: [questionId], references: [id])
   label       String?      @db.VarChar(255)
@@ -167,12 +187,12 @@ model QuizOption {
 }
 
 model QuizAttempt {
-  id          Int   @id @default(autoincrement())
+  id          Int            @id @default(autoincrement())
   learnerId   String
   learner     LearnerProfile @relation(fields: [learnerId], references: [id])
   quizId      Int
   quiz        Quiz           @relation(fields: [quizId], references: [id])
-  score       Float?         // TODO: percentage or raw points?
+  score       Float? // TODO: percentage or raw points?
   startedAt   DateTime       @default(now())
   completedAt DateTime?
 
@@ -180,13 +200,14 @@ model QuizAttempt {
 }
 
 model LearnerProgress {
-  id          Int   @id @default(autoincrement())
+  id          Int            @id @default(autoincrement())
   learnerId   String
   learner     LearnerProfile @relation(fields: [learnerId], references: [id])
   lessonId    Int
   lesson      Lesson         @relation(fields: [lessonId], references: [id])
   status      String         @default("not_started") @db.VarChar(20) // TODO: enum not_started/in_progress/completed?
-  metadata    Json? // "score/metadata" — score kept here, or a separate score column?
+  score       Int? // % correct on last attempt
+  metadata    Json?
   completedAt DateTime?
   syncRef     String?        @db.VarChar(255) // TODO: offline-sync id — string, or something more structured?
   createdAt   DateTime       @default(now())
@@ -194,6 +215,43 @@ model LearnerProgress {
 
   @@unique([learnerId, lessonId]) // TODO: confirm one progress row per learner+lesson is correct
   @@map("learner_progress")
+}
+
+enum ModuleStatus {
+  locked
+  available
+  in_progress
+  completed
+}
+
+model LearnerModuleProgress {
+  id          Int            @id @default(autoincrement())
+  learnerId   String
+  learner     LearnerProfile @relation(fields: [learnerId], references: [id])
+  moduleId    Int
+  module      Module         @relation(fields: [moduleId], references: [id])
+  status      ModuleStatus   @default(locked)
+  completedAt DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@unique([learnerId, moduleId])
+  @@map("learner_module_progress")
+}
+
+// Per-question answer log (QuizAttempt holds the overall quiz score)
+model QuestionAttempt {
+  id          Int            @id @default(autoincrement())
+  learnerId   String
+  learner     LearnerProfile @relation(fields: [learnerId], references: [id])
+  questionId  Int
+  question    QuizQuestion   @relation(fields: [questionId], references: [id])
+  givenAnswer Json?
+  isCorrect   Boolean?
+  attemptedAt DateTime       @default(now())
+
+  @@index([attemptedAt])
+  @@map("question_attempts")
 }
 
 // --- Dictionary, gamification & content governance --------------------------
@@ -212,7 +270,7 @@ model Category {
   updatedAt    DateTime   @updatedAt
   deleted      Boolean    @default(false)
 
-  entries      DictionaryEntry[]
+  entries DictionaryEntry[]
 
   @@map("categories")
 }
@@ -224,12 +282,42 @@ model DictionaryEntry {
   categoryId  Int?
   category    Category? @relation(fields: [categoryId], references: [id])
   mediaRef    String?   @db.VarChar(255)
+  difficulty  String    @default("beginner") @db.VarChar(20)
   status      String    @default("draft") @db.VarChar(20)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   deleted     Boolean   @default(false)
 
+  media     SignMedia[]
+  questions QuizQuestionSign[]
+
+  @@index([gloss])
   @@map("dictionary_entries")
+}
+
+// Sign videos — a sign can have several angles (front, side)
+model SignMedia {
+  id           Int             @id @default(autoincrement())
+  entryId      Int
+  entry        DictionaryEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  videoUrl     String          @db.VarChar(255)
+  thumbnailUrl String?         @db.VarChar(255)
+  angle        String          @default("front") @db.VarChar(20)
+  durationMs   Int?
+  createdAt    DateTime        @default(now())
+
+  @@map("sign_media")
+}
+
+// Signs used by a quiz question
+model QuizQuestionSign {
+  questionId Int
+  question   QuizQuestion    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  entryId    Int
+  entry      DictionaryEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@id([questionId, entryId])
+  @@map("quiz_question_signs")
 }
 
 model Favourite {
@@ -253,7 +341,7 @@ model Badge {
   updatedAt   DateTime @updatedAt
   deleted     Boolean  @default(false)
 
-  learners    LearnerBadge[]
+  learners LearnerBadge[]
 
   @@map("badges")
 }
@@ -276,11 +364,62 @@ model LearnerActivity {
   activityDate DateTime       @db.Date // TODO: "activity_date/event" — a calendar date, an event name, or both?
   event        String?        @db.VarChar(50)
   points       Int?           @default(0)
+  maintained   Boolean        @default(true) // streak kept on this day
   streakState  Json? // TODO: "points/streak state" — current streak count, longest streak, etc.
   createdAt    DateTime       @default(now())
 
   @@unique([learnerId, activityDate]) // TODO: confirm one row per learner per day
   @@map("learner_activity")
+}
+
+// Running totals for XP, streaks and hearts (one row per learner)
+model LearnerStats {
+  learnerId      String         @id
+  learner        LearnerProfile @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  totalXp        Int            @default(0)
+  currentStreak  Int            @default(0)
+  longestStreak  Int            @default(0)
+  hearts         Int            @default(5)
+  lastActiveDate DateTime?      @db.Date
+  updatedAt      DateTime       @updatedAt
+
+  @@map("learner_stats")
+}
+
+model XpTransaction {
+  id         Int            @id @default(autoincrement())
+  learnerId  String
+  learner    LearnerProfile @relation(fields: [learnerId], references: [id])
+  amount     Int
+  sourceType String         @db.VarChar(50) // lesson | daily_challenge | module_complete
+  sourceId   String?        @db.VarChar(36) // mixed id types, stored as string
+  createdAt  DateTime       @default(now())
+
+  @@index([createdAt])
+  @@map("xp_transactions")
+}
+
+model DailyChallenge {
+  id          Int      @id @default(autoincrement())
+  date        DateTime @unique @db.Date
+  targetCount Int // e.g. "sign 5 new words"
+  xpReward    Int      @default(30)
+
+  learners LearnerDailyChallenge[]
+
+  @@map("daily_challenges")
+}
+
+model LearnerDailyChallenge {
+  learnerId    String
+  learner      LearnerProfile @relation(fields: [learnerId], references: [id])
+  challengeId  Int
+  challenge    DailyChallenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  currentCount Int            @default(0)
+  completedAt  DateTime?
+
+  @@id([learnerId, challengeId])
+  @@map("learner_daily_challenges")
 }
 
 model MediaAsset {

@@ -33,7 +33,7 @@ const ForgotPassword: NextPage = () => {
             Remembered your password?{" "}
             <Link
               className="font-semibold text-blue-500 hover:underline"
-              href="/?login"
+              href="/login"
             >
               Log in
             </Link>

@@ -17,6 +17,51 @@ export const LOAD_USERS = gql`
   }
 `;
 
+// `learner` with no args returns the signed-in user's profile (null if none)
+export const MY_LEARNER_PROFILE = gql`
+  query MyLearnerProfile($userId: ID!) {
+    user(id: $userId) {
+      id
+      role {
+        id
+        name
+      }
+    }
+    learner {
+      id
+      hearingStatus
+      preferredLanguage
+    }
+  }
+`;
+
+export const MY_PROFILE = gql`
+  query MyProfile($userId: ID!) {
+    user(id: $userId) {
+      id
+      email
+      username
+      name
+      createdAt
+      role {
+        id
+        name
+      }
+    }
+    learner {
+      id
+      hearingStatus
+      preferredLanguage
+      stats {
+        totalXp
+        currentStreak
+        longestStreak
+        hearts
+      }
+    }
+  }
+`;
+
 export const ROLES = gql`
   query Roles {
     roles {

@@ -2,7 +2,14 @@ import { Kind, parse } from "graphql";
 
 const PUBLIC_ROOT_FIELDS = Object.freeze({
   query: new Set(["health"]),
-  mutation: new Set(["login", "requestPasswordResetLink", "resetPasswordWithToken", "register"]),
+  mutation: new Set([
+    "login",
+    "requestPasswordResetLink",
+    "resetPasswordWithToken",
+    "register",
+    "verifyEmail",
+    "resendVerificationEmail",
+  ]),
 });
 
 const selectOperation = (document, operationName) => {

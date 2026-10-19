@@ -31,6 +31,24 @@ export const REGISTER = gql`
   }
 `;
 
+export const VERIFY_EMAIL = gql`
+  mutation VerifyEmail($token: String!) {
+    verifyEmail(token: $token) {
+      success
+      message
+    }
+  }
+`;
+
+export const RESEND_VERIFICATION_EMAIL = gql`
+  mutation ResendVerificationEmail($email: String!) {
+    resendVerificationEmail(email: $email) {
+      success
+      message
+    }
+  }
+`;
+
 export const CREATE_USER = gql`
   mutation CreateUser($input: CreateUserInput!) {
     createUser(input: $input) {
@@ -84,6 +102,35 @@ export const SAVE_ROLE = gql`
         name
         description
         permissions
+      }
+    }
+  }
+`;
+
+export const SAVE_LEARNER = gql`
+  mutation SaveLearner($input: saveLearnerInput!) {
+    SaveLearner(input: $input) {
+      success
+      message
+      Learner {
+        id
+        hearingStatus
+        preferredLanguage
+      }
+    }
+  }
+`;
+
+export const UPDATE_ME = gql`
+  mutation UpdateMe($input: UpdateMeInput!) {
+    updateMe(input: $input) {
+      success
+      message
+      user {
+        id
+        email
+        username
+        name
       }
     }
   }

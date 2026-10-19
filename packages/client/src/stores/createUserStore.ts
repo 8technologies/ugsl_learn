@@ -75,6 +75,8 @@ export const createUserSlice: BoundStateCreator<UserSlice> = (set) => ({
       token: null,
       id: "",
       email: "",
+      name: "",
+      username: "",
     }));
   },
 });

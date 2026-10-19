@@ -60,7 +60,7 @@ const AdminUsersPage: NextPage = () => {
   const hasHydrated = useBoundStore((x) => x.hasHydrated);
 
   useEffect(() => {
-    if (hasHydrated && !loggedIn) void router.replace("/?login");
+    if (hasHydrated && !loggedIn) void router.replace("/login");
   }, [hasHydrated, loggedIn, router]);
 
   const [page, setPage] = useState(0);
