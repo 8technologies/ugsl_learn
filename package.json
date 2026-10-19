@@ -14,5 +14,10 @@
     "db:status": "npm run db:status --workspace=@ugsl/server",
     "db:seed": "npm run db:seed --workspace=@ugsl/server",
     "db:studio": "npm run db:studio --workspace=@ugsl/server"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0"
   }
 }

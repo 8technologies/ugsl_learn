@@ -16,6 +16,12 @@ const responseTypeDefs = `#graphql
       token: String!
       user: User
   }
+
+  type LearnerResponse {
+    success: Boolean!
+    message: String
+    Learner: Learner
+  }
 `;
 
 export default responseTypeDefs;
