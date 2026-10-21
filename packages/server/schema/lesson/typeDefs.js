@@ -70,21 +70,9 @@ const lessonTypeDefs = `#graphql
         status:   String   
     }
 
-    input moduleInput{
-        id: ID
-        levelId: Int! 
-        title:  String   
-        description: String  
-        sequence: Int
-        xpReward: Int   
-        requiresModuleId: Int
-        unlocks: [Int] 
-        status:  String   
-    }
-
     input lessonsInput {
         id: ID
-        moduleId:    Int
+        # moduleId:    Int
         title:       String   
         description: String
         sequence:    Int
@@ -92,6 +80,21 @@ const lessonTypeDefs = `#graphql
         xpReward:    Int      
         status:      String
     }
+
+    input moduleInput{
+        id: ID
+        levelId: Int! 
+        title:  String   
+        description: String  
+        sequence: Int
+        xpReward: Int   
+        # requiresModuleId: Int
+        unlocks: [Int] 
+        status:  String  
+        lessons: [lessonsInput!] 
+    }
+
+    
 
 `;
 
