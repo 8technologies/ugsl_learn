@@ -3,13 +3,19 @@ import { CombinedGraphQLErrors } from "@apollo/client/errors";
 import { SetContextLink } from "@apollo/client/link/context";
 import { ErrorLink } from "@apollo/client/link/error";
 
+import UploadHttpLink from "apollo-upload-client/UploadHttpLink.mjs";
+
 import { env } from "~/env.mjs";
 import { useBoundStore } from "~/hooks/useBoundStore";
 import { getStoredToken } from "~/lib/authStorage";
 
-const httpLink = new HttpLink({
+const httpLink = new UploadHttpLink({
   uri: env.NEXT_PUBLIC_GRAPHQL_URL,
 });
+
+// const httpLink = new HttpLink({
+//   uri: env.NEXT_PUBLIC_GRAPHQL_URL,
+// });
 
 const authLink = new SetContextLink((prevContext) => {
   const token = getStoredToken();

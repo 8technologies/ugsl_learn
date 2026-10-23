@@ -49,4 +49,16 @@ export const LEARNING_PATH_MOCK: LearningUnit[] = [
       { id: "counting", label: "Counting", xp: 50, status: "locked" },
     ],
   },
+  {
+    id: "module-3",
+    unitLabel: "Module 3",
+    title: "Greetings",
+    doneCount: 1,
+    totalCount: 2,
+    locked: true,
+    nodes: [
+      { id: "1", label: "Greetings", xp: 50, status: "locked" },
+      { id: "2", label: "Introductions", xp: 30, status: "locked" },
+    ],
+  }
 ];

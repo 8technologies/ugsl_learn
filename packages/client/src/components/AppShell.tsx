@@ -189,7 +189,12 @@ const NAV_ITEMS: NavItem[] = [
   { name: "Alphabet", href: "/signs", icon: LetterText },
   { name: "Progress", href: "/progress", icon: BarChart3 },
   { name: "Dictionary", href: "/favourites", icon: BookOpen },
-  { name: "Content Management", href: "/content-management", icon: School2 },
+  { name: "Content Management", href: "/content-management", icon: School2,
+    children: [
+      {name: "Levels", href: "/content/levels"},
+      {name: "Modules and lessons", href: "/content/modules-lessons"}
+    ],
+   },
   {
     name: "Admin",
     href: "/admin",

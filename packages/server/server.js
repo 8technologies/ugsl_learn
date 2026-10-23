@@ -6,7 +6,6 @@ import { db } from "./config/database.js";
 import express from "express"
 import cors from "cors";
 import rateLimit from "express-rate-limit";
-import graphqlUploadExpress from "graphql-upload/graphqlUploadExpress.mjs";
 
 
 await db.$connect();
@@ -67,7 +66,9 @@ app.use(
   cors({ origin: "*", exposedHeaders: ["x-request-id"] }),
   express.json(),
   loginLimiter,
-  graphqlUploadExpress(),
+  // File uploads are parsed by Yoga itself (multipart requests). Don't add
+  // graphqlUploadExpress here: Yoga rebuilds the request from its parsed body
+  // and the files are lost.
   yoga
 );
 

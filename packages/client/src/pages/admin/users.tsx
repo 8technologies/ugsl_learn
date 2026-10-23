@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
+import { FormField } from "~/components/ui/form-field";
 import { Input } from "~/components/ui/input";
 import { useBoundStore } from "~/hooks/useBoundStore";
 import { LOAD_USERS, ROLES } from "~/gql/queries";
@@ -62,13 +63,6 @@ const emptyForm: UserFormState = {
 
 const getErrorMessage = (error: unknown, fallback: string) =>
   error instanceof Error ? error.message : fallback;
-
-const FormField = ({ label, children }: { label: string; children: React.ReactNode }) => (
-  <div>
-    <label className="mb-1.5 block text-sm font-medium text-gray-700">{label}</label>
-    {children}
-  </div>
-);
 
 const AdminUsersPage: NextPage = () => {
   const router = useRouter();

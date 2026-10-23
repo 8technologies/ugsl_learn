@@ -9,6 +9,8 @@ import {
   type LearningNode,
   type LearningNodeStatus,
 } from "~/data/learningPathMock";
+import { LOAD_MODULES } from "~/gql/lessons";
+import { useQuery } from "@apollo/client/react";
 
 type LearnTab = "path" | "modules";
 

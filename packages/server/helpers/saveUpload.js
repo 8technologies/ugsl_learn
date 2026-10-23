@@ -3,6 +3,7 @@ import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from "uuid";
 import path from "path";
 import fs from "fs";
+import { Readable } from "stream";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,12 +25,24 @@ const saveUpload = async ({
 }) => {
   let filePath = "";
   try {
-    const upload = await file; // { filename, mimetype, encoding, createReadStream }
-    if (!upload || typeof upload.createReadStream !== "function") {
+    const upload = await file;
+    // Yoga hands resolvers a web File ({ name, type, arrayBuffer() }); older
+    // graphql-upload code passes { filename, mimetype, createReadStream }.
+    const isWebFile = upload && typeof upload.arrayBuffer === "function" && typeof upload.createReadStream !== "function";
+    if (!upload || (!isWebFile && typeof upload.createReadStream !== "function")) {
       throw new GraphQLError("Invalid upload payload");
     }
 
-    const { filename: originalName, mimetype, encoding, createReadStream } = upload;
+    if (isWebFile && maxSize && upload.size > maxSize) {
+      throw new GraphQLError(`File size exceeds the limit of ${maxSize / (1024 * 1024)}MB`);
+    }
+
+    const originalName = isWebFile ? upload.name : upload.filename;
+    const mimetype = isWebFile ? upload.type : upload.mimetype;
+    const encoding = isWebFile ? undefined : upload.encoding;
+    // Size was checked above, so reading a web File into memory is bounded
+    const webFileBytes = isWebFile ? Buffer.from(await upload.arrayBuffer()) : null;
+    const createReadStream = isWebFile ? () => Readable.from([webFileBytes]) : upload.createReadStream;
 
     const ext = path.extname(originalName || "").toLowerCase();
     const id = uuidv4();
