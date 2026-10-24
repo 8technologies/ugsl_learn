@@ -2,10 +2,20 @@ import type { NextPage } from "next";
 import { useRouter } from "next/router";
 import React, { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@apollo/client/react";
-import { TopBar } from "~/components/TopBar";
-import { LeftBar } from "~/components/LeftBar";
-import { BottomBar } from "~/components/BottomBar";
-import { AdminRightNav } from "~/components/AdminRightNav";
+import { toast } from "sonner";
+import { ChevronLeft, ChevronRight, Pencil, Search, Trash2, UserPlus } from "lucide-react";
+import { AppShell } from "~/components/AppShell";
+import { PasswordInput } from "~/components/auth/PasswordInput";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
+import { FormField } from "~/components/ui/form-field";
+import { Input } from "~/components/ui/input";
 import { useBoundStore } from "~/hooks/useBoundStore";
 import { LOAD_USERS, ROLES } from "~/gql/queries";
 import { CREATE_USER, DELETE_USER, UPDATE_USER } from "~/gql/mutations";
@@ -152,6 +162,7 @@ const AdminUsersPage: NextPage = () => {
       }
 
       setIsFormOpen(false);
+      toast.success(isEditing ? "User updated" : "User created");
       void refetch();
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Could not save this user."));
@@ -163,9 +174,10 @@ const AdminUsersPage: NextPage = () => {
     setDeletingId(user.id);
     try {
       await deleteUser({ variables: { id: user.id } });
+      toast.success(`Deleted ${user.username}`);
       void refetch();
     } catch (error) {
-      window.alert(getErrorMessage(error, "Could not delete this user."));
+      toast.error(getErrorMessage(error, "Could not delete this user."));
     } finally {
       setDeletingId(null);
     }
@@ -174,220 +186,247 @@ const AdminUsersPage: NextPage = () => {
   if (!hasHydrated || !loggedIn) return null;
 
   return (
-    <div>
-      <TopBar />
-      <LeftBar selectedTab="Admin" />
-      <BottomBar selectedTab="Admin" />
-      <div className="mx-auto flex flex-col gap-5 px-4 py-20 sm:py-10 md:pl-28 lg:pl-72">
-        <div className="mx-auto flex w-full max-w-xl items-center justify-between lg:max-w-4xl">
+    <AppShell>
+      <div className="mx-auto flex max-w-5xl flex-col gap-6">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-lg font-bold text-gray-800 sm:text-2xl">Users</h1>
-            <p className="text-sm text-gray-500">Manage users and their roles</p>
+            <h1 className="text-3xl font-bold text-gray-900">Users</h1>
+            <p className="mt-1 text-gray-500">Manage users and their roles</p>
           </div>
           <button
-            className="rounded-2xl border-b-4 border-blue-600 bg-blue-500 px-5 py-3 font-bold uppercase text-white transition hover:brightness-110"
+            type="button"
             onClick={openCreateForm}
+            className="flex items-center gap-2 rounded-xl bg-orange-500 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-orange-600"
           >
+            <UserPlus className="h-4 w-4" />
             New user
           </button>
         </div>
 
-        <div className="flex justify-center gap-12">
-          <div className="flex w-full max-w-xl flex-col gap-4 lg:max-w-4xl">
-            <div className="flex flex-wrap items-center gap-3">
+        <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+          <div className="flex flex-wrap items-center gap-3 border-b border-gray-200 p-4">
+            <div className="relative w-full max-w-xs">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <input
-                className="w-56 rounded-xl border-2 border-gray-200 px-4 py-2 text-sm placeholder:text-gray-400"
-                placeholder="Search users"
+                className="w-full rounded-xl border border-gray-200 bg-gray-50 py-2 pl-9 pr-4 text-sm text-gray-900 placeholder:text-gray-400"
+                placeholder="Search by name, username or email"
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
                   setPage(0);
                 }}
               />
-              <select
-                className="rounded-xl border-2 border-gray-200 px-4 py-2 text-sm text-gray-700"
-                value={roleFilter}
-                onChange={(e) => {
-                  setRoleFilter(e.target.value);
-                  setPage(0);
-                }}
-              >
-                <option value="">All roles</option>
-                {roles.map((role) => (
-                  <option key={role.id} value={role.id}>
-                    {role.name}
-                  </option>
-                ))}
-              </select>
             </div>
+            <select
+              className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700"
+              value={roleFilter}
+              onChange={(e) => {
+                setRoleFilter(e.target.value);
+                setPage(0);
+              }}
+            >
+              <option value="">All roles</option>
+              {roles.map((role) => (
+                <option key={role.id} value={role.id}>
+                  {role.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-            {usersError && (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
-                {getErrorMessage(usersError, "Failed to load users.")}
-              </div>
-            )}
+          {usersError && (
+            <div className="m-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+              {getErrorMessage(usersError, "Failed to load users.")}
+            </div>
+          )}
 
-            <div className="overflow-x-auto rounded-2xl border-2 border-gray-100">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b-2 border-gray-100 text-xs uppercase text-gray-400">
-                    <th className="px-4 py-3">User</th>
-                    <th className="px-4 py-3">Email</th>
-                    <th className="px-4 py-3">Role</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <th className="px-5 py-3">User</th>
+                  <th className="px-5 py-3">Email</th>
+                  <th className="px-5 py-3">Role</th>
+                  <th className="px-5 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usersLoading ? (
+                  <tr>
+                    <td className="py-10 text-center text-gray-400" colSpan={4}>
+                      Loading users…
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {usersLoading ? (
-                    <tr>
-                      <td className="py-6 text-center text-gray-400" colSpan={4}>
-                        Loading users...
-                      </td>
-                    </tr>
-                  ) : users.length === 0 ? (
-                    <tr>
-                      <td className="py-6 text-center text-gray-400" colSpan={4}>
-                        No users found.
-                      </td>
-                    </tr>
-                  ) : (
-                    users.map((user) => (
-                      <tr key={user.id} className="border-b border-gray-50">
-                        <td className="px-4 py-3">
-                          <div className="font-semibold text-gray-800">{user.name}</div>
-                          <div className="text-xs text-gray-500">@{user.username}</div>
-                        </td>
-                        <td className="px-4 py-3 text-gray-700">{user.email}</td>
-                        <td className="px-4 py-3">
-                          {user.role ? (
-                            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600">
-                              {user.role.name}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400">No role</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50"
-                              onClick={() => openEditForm(user)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-500 transition hover:bg-red-50 disabled:opacity-50"
-                              onClick={() => void handleDelete(user)}
-                              disabled={deletingId === user.id}
-                            >
-                              {deletingId === user.id ? "Deleting..." : "Delete"}
-                            </button>
+                ) : users.length === 0 ? (
+                  <tr>
+                    <td className="py-10 text-center text-gray-400" colSpan={4}>
+                      No users found.
+                    </td>
+                  </tr>
+                ) : (
+                  users.map((user) => (
+                    <tr
+                      key={user.id}
+                      className="border-b border-gray-100 transition last:border-0 hover:bg-gray-50"
+                    >
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-500 text-sm font-bold text-white">
+                            {(user.name || user.username).charAt(0).toUpperCase()}
                           </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                          <div className="min-w-0">
+                            <div className="truncate font-semibold text-gray-900">{user.name}</div>
+                            <div className="truncate text-xs text-gray-500">@{user.username}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-gray-700">{user.email}</td>
+                      <td className="px-5 py-3">
+                        {user.role ? (
+                          <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                            {user.role.name}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">No role</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openEditForm(user)}
+                            className="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-900"
+                            aria-label={`Edit ${user.username}`}
+                            title="Edit"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDelete(user)}
+                            disabled={deletingId === user.id}
+                            className="rounded-lg p-2 text-gray-500 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                            aria-label={`Delete ${user.username}`}
+                            title="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
 
-            <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-between gap-2 border-t border-gray-200 px-5 py-3 text-sm text-gray-500">
+            <span>Page {page + 1}</span>
+            <div className="flex gap-2">
               <button
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-40"
+                type="button"
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={page === 0}
+                className="flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-1.5 font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-40"
               >
+                <ChevronLeft className="h-4 w-4" />
                 Previous
               </button>
               <button
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-40"
+                type="button"
                 onClick={() => setPage((p) => p + 1)}
                 disabled={!hasNextPage}
+                className="flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-1.5 font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-40"
               >
                 Next
+                <ChevronRight className="h-4 w-4" />
               </button>
             </div>
           </div>
-          {/* <AdminRightNav selectedTab="Users" /> */}
-        </div>
+        </section>
       </div>
 
-      {isFormOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <h2 className="mb-4 text-xl font-bold text-gray-900">
-              {isEditing ? "Edit user" : "Create user"}
-            </h2>
-            <form onSubmit={(e) => void handleSubmit(e)} className="flex flex-col gap-3">
-              <input
-                className="rounded-xl border border-gray-200 px-4 py-2 text-sm"
-                placeholder="Username"
-                value={form.username}
-                onChange={(e) => setForm({ ...form, username: e.target.value })}
-                required
-              />
-              <input
-                className="rounded-xl border border-gray-200 px-4 py-2 text-sm"
-                placeholder="Name"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                required
-              />
-              <input
-                className="rounded-xl border border-gray-200 px-4 py-2 text-sm"
-                placeholder="Email"
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                required
-              />
-              <input
-                className="rounded-xl border border-gray-200 px-4 py-2 text-sm"
-                placeholder={isEditing ? "New password (optional)" : "Password"}
-                type="password"
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                required={!isEditing}
-              />
-              <select
-                className="rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-700"
-                value={form.roleId}
-                onChange={(e) => setForm({ ...form, roleId: e.target.value })}
-                required={!isEditing}
-              >
-                <option value="">Select role</option>
-                {roles.map((role) => (
-                  <option key={role.id} value={role.id}>
-                    {role.name}
-                  </option>
-                ))}
-              </select>
+      <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+        <DialogContent className="max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>{isEditing ? "Edit user" : "Create user"}</DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            <form onSubmit={(e) => void handleSubmit(e)} className="flex flex-col gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField label="Full name">
+                  <Input
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    placeholder="Jane Doe"
+                    required
+                  />
+                </FormField>
+                <FormField label="Username">
+                  <Input
+                    value={form.username}
+                    onChange={(e) => setForm({ ...form, username: e.target.value })}
+                    placeholder="janedoe"
+                    required
+                  />
+                </FormField>
+              </div>
+              <FormField label="Email">
+                <Input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  placeholder="you@example.com"
+                  required
+                />
+              </FormField>
+              <FormField label={isEditing ? "New password (optional)" : "Password"}>
+                <PasswordInput
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  placeholder="••••••••"
+                  required={!isEditing}
+                />
+              </FormField>
+              <FormField label="Role">
+                <select
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900"
+                  value={form.roleId}
+                  onChange={(e) => setForm({ ...form, roleId: e.target.value })}
+                  required={!isEditing}
+                >
+                  <option value="">Select role</option>
+                  {roles.map((role) => (
+                    <option key={role.id} value={role.id}>
+                      {role.name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
 
-              {errorMessage && (
-                <p className="text-sm font-bold text-red-500">{errorMessage}</p>
-              )}
+              {errorMessage && <p className="text-sm font-semibold text-red-500">{errorMessage}</p>}
 
-              <div className="mt-2 flex justify-end gap-3">
+              <DialogFooter className="mt-2 gap-3">
                 <button
                   type="button"
-                  className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
                   onClick={() => setIsFormOpen(false)}
+                  className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600 disabled:opacity-50"
                   disabled={saving}
+                  className="flex-1 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-orange-600 disabled:opacity-50"
                 >
-                  {saving ? "Saving..." : isEditing ? "Save changes" : "Create user"}
+                  {saving ? "Saving…" : isEditing ? "Save changes" : "Create user"}
                 </button>
-              </div>
+              </DialogFooter>
             </form>
-          </div>
-        </div>
-      )}
-    </div>
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+    </AppShell>
   );
 };
 

@@ -7,6 +7,7 @@ import { BottomBar } from "~/components/BottomBar";
 import { AdminRightNav } from "~/components/AdminRightNav";
 import { RolesListPage } from "~/components/admin/roles/RolesListPage";
 import { useBoundStore } from "~/hooks/useBoundStore";
+import { AppShell } from "~/components/AppShell";
 
 const AdminRolesPage: NextPage = () => {
   const router = useRouter();
@@ -20,11 +21,8 @@ const AdminRolesPage: NextPage = () => {
   if (!hasHydrated || !loggedIn) return null;
 
   return (
-    <div>
-      <TopBar />
-      <LeftBar selectedTab="Admin" />
-      <BottomBar selectedTab="Admin" />
-      <div className="mx-auto flex flex-col gap-5 px-4 py-20 sm:py-10 md:pl-28 lg:pl-72">
+    <AppShell>
+      <div className="mx-auto flex flex-col gap-5 px-4 py-20 sm:py-10 ">
         <div className="mx-auto flex w-full max-w-xl items-center justify-between lg:max-w-4xl">
           <div>
             <h1 className="text-lg font-bold text-gray-800 sm:text-2xl">Roles</h1>
@@ -39,7 +37,7 @@ const AdminRolesPage: NextPage = () => {
           {/* <AdminRightNav selectedTab="Roles" /> */}
         </div>
       </div>
-    </div>
+    </AppShell>
   );
 };
 

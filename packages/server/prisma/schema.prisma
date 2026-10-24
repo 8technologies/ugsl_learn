@@ -78,13 +78,15 @@ model LearnerProfile {
   @@map("learner_profiles")
 }
 
+// Content hierarchy: Level -> Module -> Lesson -> Unit
+// e.g. Beginner -> Alphabet -> A-F -> A, B, C...
 model Level {
   id          Int      @id @default(autoincrement())
   name        String   @db.VarChar(100) @unique
   description String?  @db.VarChar(500)
   difficulty  String   @default("beginner") @db.VarChar(20) // beginner | intermediate | advanced
   sequence    Int
-  status      String   @default("draft") @db.VarChar(20) // TODO: confirm allowed values (draft/published/archived?)
+  status      String   @default("draft") @db.VarChar(20) // draft | in_review | published | archived
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   deleted     Boolean  @default(false)
@@ -101,12 +103,12 @@ model Module {
   title            String   @db.VarChar(150)
   description      String?  @db.VarChar(500)
   sequence         Int
-  xpReward         Int      @default(50)
+  xpReward         Int      @default(0) // completion bonus on top of the XP of its lessons
   // Module that must be completed before this one unlocks
   requiresModuleId Int?
   requiresModule   Module?  @relation("ModulePrerequisite", fields: [requiresModuleId], references: [id])
   unlocks          Module[] @relation("ModulePrerequisite")
-  status           String   @default("draft") @db.VarChar(20) // TODO: same status enum question as Level
+  status           String   @default("draft") @db.VarChar(20) // draft | in_review | published | archived
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   deleted          Boolean  @default(false)
@@ -124,17 +126,40 @@ model Lesson {
   title       String   @db.VarChar(150)
   description String?  @db.VarChar(500)
   sequence    Int
-  mediaRef    String?  @db.VarChar(255) // TODO: URL, storage key, or FK to a media table?
-  xpReward    Int      @default(20)
-  status      String   @default("draft") @db.VarChar(20)
+  xpReward    Int      @default(50)
+  status      String   @default("draft") @db.VarChar(20) // draft | in_review | published | archived
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   deleted     Boolean  @default(false)
 
+  units    Unit[]
   quizzes  Quiz[]
   progress LearnerProgress[]
 
+  @@index([moduleId, sequence])
   @@map("lessons")
+}
+
+// A single thing taught inside a lesson, e.g. the letter "M" in lesson "M - R".
+// Teaches one dictionary sign (the video learners watch). Learner progress is tracked per Lesson.
+model Unit {
+  id          Int              @id @default(autoincrement())
+  lessonId    Int
+  lesson      Lesson           @relation(fields: [lessonId], references: [id])
+  title       String           @db.VarChar(150) // "Letter M"
+  description String?          @db.VarChar(500)
+  sequence    Int
+  mediaRef    String?          @db.VarChar(255) // TODO: URL, storage key, or FK to a media table?
+  // The sign this unit teaches. Null = "Needs video" in the admin readiness check
+  entryId     Int?
+  entry       DictionaryEntry? @relation(fields: [entryId], references: [id])
+  status      String           @default("draft") @db.VarChar(20) // draft | in_review | published | archived
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  deleted     Boolean          @default(false)
+
+  @@index([lessonId, sequence])
+  @@map("units")
 }
 
 model Quiz {
@@ -290,6 +315,7 @@ model DictionaryEntry {
 
   media     SignMedia[]
   questions QuizQuestionSign[]
+  units     Unit[]
 
   @@index([gloss])
   @@map("dictionary_entries")
@@ -439,7 +465,7 @@ model MediaAsset {
 
 model ContentValidation {
   id          Int       @id @default(autoincrement())
-  contentType String    @db.VarChar(50) // TODO: which content types get validated? (Lesson, DictionaryEntry, Quiz, ...)
+  contentType String    @db.VarChar(50) // Module | Lesson | Unit | DictionaryEntry | Quiz ... (drives draft -> in_review -> published)
   contentId   String    @db.VarChar(36) // TODO: stored as string — validated content types mix Int and uuid ids, so this can't be a real FK
   validatorId String
   validator   User      @relation(fields: [validatorId], references: [id])
