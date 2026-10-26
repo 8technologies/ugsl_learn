@@ -24,7 +24,7 @@ type Module = ModuleFormValues & {
 };
 
 type LevelsQueryResult = { levels: Level[] };
-type ModulesQueryResult = { modules: Module[] };
+export type ModulesQueryResult = { modules: Module[] };
 
 const getErrorMessage = (error: unknown, fallback: string) =>
   error instanceof Error ? error.message : fallback;

@@ -4,15 +4,49 @@ import React, { useEffect, useState } from "react";
 import { Check, Lock, Play } from "lucide-react";
 import { AppShell } from "~/components/AppShell";
 import { useBoundStore } from "~/hooks/useBoundStore";
-import {
-  LEARNING_PATH_MOCK,
-  type LearningNode,
-  type LearningNodeStatus,
-} from "~/data/learningPathMock";
-import { LOAD_MODULES } from "~/gql/lessons";
+import type { LearningNode, LearningNodeStatus, LearningUnit } from "~/data/learningPathMock";
+import { LOAD_MODULES_TABLE } from "~/gql/lessons";
 import { useQuery } from "@apollo/client/react";
 
 type LearnTab = "path" | "modules";
+
+type PathModule = {
+  id: string;
+  title: string;
+  sequence: number;
+  status: string;
+  lessons: { id: string; title: string; sequence: number; xpReward: number; status: string }[] | null;
+};
+
+type PathModulesResult = { modules: PathModule[] };
+
+// Turns modules from the server into the sections + nodes the path view draws.
+// There's no learner progress query yet, so every learner is treated as new:
+// the first lesson is "current" and everything after it is locked.
+const toLearningPath = (modules: PathModule[]): LearningUnit[] => {
+  const ordered = [...modules].sort((a, b) => a.sequence - b.sequence);
+  return ordered.map((module, moduleIndex) => {
+    const lessons = (module.lessons ?? [])
+      .filter((lesson) => lesson.status === "published")
+      .sort((a, b) => a.sequence - b.sequence);
+    return {
+      id: module.id,
+      unitLabel: `Module ${moduleIndex + 1}`,
+      title: module.title,
+      doneCount: 0,
+      totalCount: lessons.length,
+      locked: moduleIndex > 0,
+      nodes: lessons.map(
+        (lesson, lessonIndex): LearningNode => ({
+          id: lesson.id,
+          label: lesson.title,
+          xp: lesson.xpReward,
+          status: moduleIndex === 0 && lessonIndex === 0 ? "current" : "locked",
+        }),
+      ),
+    };
+  });
+};
 
 const nodePosition = (globalIndex: number): "center" | "left" | "right" =>
   (["center", "left", "right"] as const)[globalIndex % 3] ?? "center";
@@ -45,12 +79,12 @@ const NodeCircle = ({ status }: { status: LearningNodeStatus }) => {
   );
 };
 
-const LearningPathView = () => {
+const LearningPathView = ({ units }: { units: LearningUnit[] }) => {
   let globalIndex = 0;
 
   return (
     <div className="flex flex-col gap-10">
-      {LEARNING_PATH_MOCK.map((unit) => (
+      {units.map((unit) => (
         <div key={unit.id}>
           <div className="flex items-center justify-between rounded-2xl bg-[#2b2f5c] px-6 py-4 text-white">
             <div>
@@ -112,9 +146,9 @@ const LearningPathView = () => {
   );
 };
 
-const ModuleListView = () => (
+const ModuleListView = ({ units }: { units: LearningUnit[] }) => (
   <div className="flex flex-col gap-4">
-    {LEARNING_PATH_MOCK.map((unit) => (
+    {units.map((unit) => (
       <div
         key={unit.id}
         className="rounded-2xl border border-gray-200 bg-white p-5"
@@ -170,6 +204,19 @@ const LearnPage: NextPage = () => {
   const hasHydrated = useBoundStore((x) => x.hasHydrated);
   const [tab, setTab] = useState<LearnTab>("path");
 
+  // Hooks must run before the early return below, on every render
+  const {
+    data: modulesData,
+    loading: modulesLoading,
+    error: modulesError,
+  } = useQuery<PathModulesResult>(LOAD_MODULES_TABLE, {
+    // Learners only see published content
+    variables: { limit: 100, offset: 0, status: "published" },
+    skip: !loggedIn,
+    fetchPolicy: "network-only",
+  });
+  const units = toLearningPath(modulesData?.modules ?? []);
+
   useEffect(() => {
     if (hasHydrated && !loggedIn) void router.replace("/login");
   }, [hasHydrated, loggedIn, router]);
@@ -211,7 +258,19 @@ const LearnPage: NextPage = () => {
       </div>
 
       <div className="mt-8">
-        {tab === "path" ? <LearningPathView /> : <ModuleListView />}
+        {modulesLoading ? (
+          <p className="py-10 text-center text-gray-400">Loading your learning path…</p>
+        ) : modulesError ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+            {modulesError.message}
+          </div>
+        ) : units.length === 0 ? (
+          <p className="py-10 text-center text-gray-500">No lessons are published yet. Check back soon!</p>
+        ) : tab === "path" ? (
+          <LearningPathView units={units} />
+        ) : (
+          <ModuleListView units={units} />
+        )}
       </div>
     </AppShell>
   );
