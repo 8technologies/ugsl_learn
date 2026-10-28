@@ -100,6 +100,7 @@ import PreOrdersPage from "@/pages/marketplace/pre-orders/PreOrdersPage";
 import { LevelsPage } from "@/pages/levels/LevelsPage";
 import { ModulesPage } from "@/pages/modules-lessons/ModulesPage";
 import { ModuleLessonsPage } from "@/pages/modules-lessons/ModuleLessonsPage";
+import { LessonQuizPage } from "@/pages/modules-lessons/LessonQuizPage";
 import { RolesListPage } from "@/pages/roles/RolesListPage";
 
 const AppRoutingSetup = (): ReactElement => {
@@ -163,6 +164,14 @@ const AppRoutingSetup = (): ReactElement => {
             element={
               <PermissionGuard required={["can_view_content"]}>
                 <ModuleLessonsPage />
+              </PermissionGuard>
+            }
+          />
+          <Route
+            path="/content/modules/:moduleId/lessons/:lessonId/quiz"
+            element={
+              <PermissionGuard required={["can_view_content"]}>
+                <LessonQuizPage />
               </PermissionGuard>
             }
           />

@@ -159,3 +159,60 @@ export const DELETE_UNIT = gql`
     }
   }
 `;
+
+// A lesson's quiz with its questions and their answer options
+export const LESSONQUIZ = gql`
+  query LessonQuiz($lessonId: Int!) {
+    lessonQuiz(lessonId: $lessonId) {
+      id
+      lessonId
+      passThreshold
+      status
+      updatedAt
+      quizQuestions {
+        id
+        questionType
+        prompt
+        mediaRef
+        sequence
+        correctAnswer
+        updatedAt
+        Options {
+          id
+          label
+          mediaRef
+          correctFlag
+        }
+      }
+    }
+  }
+`;
+
+// No `id` in the input creates a quiz for `lessonId`; with an `id` it updates that quiz
+export const SAVE_QUIZ = gql`
+  mutation SaveQuiz($input: quizInput!) {
+    saveQuiz(input: $input) {
+      success
+      message
+    }
+  }
+`;
+
+// `input.video` and each option's `video` may be a File, sent as a multipart request
+export const SAVE_QUIZ_QUESTION = gql`
+  mutation SaveQuizQuestion($input: quizQuestionInput!) {
+    saveQuizQuestion(input: $input) {
+      success
+      message
+    }
+  }
+`;
+
+export const DELETE_QUIZ_QUESTION = gql`
+  mutation DeleteQuizQuestion($id: ID!) {
+    deleteQuizQuestion(id: $id) {
+      success
+      message
+    }
+  }
+`;

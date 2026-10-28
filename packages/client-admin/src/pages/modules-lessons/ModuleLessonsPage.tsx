@@ -3,6 +3,7 @@ import {
   ChevronLeft,
   CircleAlert,
   Ellipsis,
+  FileQuestion,
   GripVertical,
   Pencil,
   Play,
@@ -10,7 +11,7 @@ import {
   Trash2,
 } from "lucide-react";
 import React, { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery } from "@apollo/client/react";
 import { toast } from "sonner";
 import { Container } from "@/components/container";
@@ -18,6 +19,7 @@ import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/
 import { URL_2 } from "@/config/urls";
 import {
   DELETE_UNIT,
+  LESSONQUIZ,
   LOAD_LESSON_UNITS,
   LOAD_LEVELS,
   LOAD_MODULE_DETAIL,
@@ -59,6 +61,7 @@ type Unit = UnitFormValues & {
 type ModuleDetailResult = { module: ModuleDetail | null };
 type LessonUnitsResult = { units: Unit[] };
 type LevelsResult = { levels: { id: string; name: string }[] };
+type LessonQuizResult = { lessonQuiz: { id: string; quizQuestions: { id: number }[] | null }[] };
 type MutationResult = { success: boolean; message: string };
 
 const NAVY = "#2b2f5c";
@@ -109,8 +112,10 @@ const Stat = ({ label, children }: { label: string; children: React.ReactNode })
 
 const ModuleLessonsPage = () => {
   const { moduleId = "" } = useParams();
+  const [searchParams] = useSearchParams();
 
-  const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
+  // ?lesson=<id> opens that lesson, e.g. when coming back from its quiz
+  const [selectedLessonId, setSelectedLessonId] = useState<string | null>(searchParams.get("lesson"));
   const [isModuleFormOpen, setIsModuleFormOpen] = useState(false);
   const [lessonForm, setLessonForm] = useState<{ open: boolean; lesson: Lesson | null }>({
     open: false,
@@ -148,6 +153,13 @@ const ModuleLessonsPage = () => {
     fetchPolicy: "network-only",
   });
   const units = [...(unitsData?.units ?? [])].sort((a, b) => a.sequence - b.sequence);
+
+  const { data: quizData } = useQuery<LessonQuizResult>(LESSONQUIZ, {
+    variables: { lessonId: Number(selectedLesson?.id) },
+    skip: !selectedLesson,
+    fetchPolicy: "network-only",
+  });
+  const quiz = quizData?.lessonQuiz[0] ?? null;
   const unitsNeedingVideo = units.filter((unit) => unit.needsVideo);
   const readyCount = units.length - unitsNeedingVideo.length;
 
@@ -413,6 +425,14 @@ const ModuleLessonsPage = () => {
                         {relativeTime(selectedLesson.updatedAt)}
                       </p>
                     </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                    <Link
+                      to={`/content/modules/${moduleId}/lessons/${selectedLesson.id}/quiz`}
+                      className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50"
+                    >
+                      <FileQuestion className="h-4 w-4" />
+                      {quiz ? `Quiz · ${quiz.quizQuestions?.length ?? 0} questions` : "Add quiz"}
+                    </Link>
                     <button
                       type="button"
                       onClick={() => setUnitForm({ open: true, unit: null })}
@@ -421,6 +441,7 @@ const ModuleLessonsPage = () => {
                       <Plus className="h-4 w-4" />
                       Add unit
                     </button>
+                    </div>
                   </div>
 
                   {unitsNeedingVideo.length > 0 && (
