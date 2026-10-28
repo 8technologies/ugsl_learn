@@ -1,0 +1,243 @@
+/* eslint-disable no-unused-vars */
+import axios from "axios";
+import {
+  createContext,
+  type Dispatch,
+  type PropsWithChildren,
+  type SetStateAction,
+  useEffect,
+  useState,
+} from "react";
+
+import * as authHelper from "../_helpers";
+import { type AuthModel, type UserModel } from "@/auth";
+import { useLazyQuery } from "@apollo/client/react";
+import { useApolloClient } from "@apollo/client/react";
+import { ME } from "@/gql/queries";
+import {
+  REQUEST_PASSWORD_RESET_LINK,
+  RESET_PASSWORD_WITH_TOKEN,
+} from "@/gql/mutations";
+
+const API_URL = import.meta.env.VITE_APP_API_URL;
+export const LOGIN_URL = `${API_URL}/login`;
+export const REGISTER_URL = `${API_URL}/register`;
+export const GET_USER_URL = `${API_URL}/user`;
+
+interface AuthContextProps {
+  loading: boolean;
+  setLoading: Dispatch<SetStateAction<boolean>>;
+  auth: AuthModel | undefined;
+  saveAuth: (auth: AuthModel | undefined) => void;
+  currentUser: UserModel | undefined;
+  setCurrentUser: Dispatch<SetStateAction<UserModel | undefined>>;
+  login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle?: () => Promise<void>;
+  loginWithFacebook?: () => Promise<void>;
+  loginWithGithub?: () => Promise<void>;
+  register: (
+    email: string,
+    password: string,
+    password_confirmation: string,
+  ) => Promise<void>;
+  requestPasswordResetLink: (email: string) => Promise<void>;
+  changePassword: (
+    email: string,
+    token: string,
+    password: string,
+    password_confirmation: string,
+  ) => Promise<void>;
+  getUser: () => Promise<UserModel>;
+  logout: () => void;
+  verify: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextProps | null>(null);
+
+const AuthProvider = ({ children }: PropsWithChildren) => {
+  const [loading, setLoading] = useState(true);
+  const [auth, setAuth] = useState<AuthModel | undefined>(authHelper.getAuth());
+  const [currentUser, setCurrentUser] = useState<UserModel | undefined>(
+    authHelper.getUser(),
+  );
+  const client = useApolloClient();
+
+  const [loadMe] = useLazyQuery(ME, {
+    fetchPolicy: "network-only",
+  });
+
+  // Sync auth state with localStorage on mount
+  useEffect(() => {
+    const storedAuth = authHelper.getAuth();
+    const storedUser = authHelper.getUser();
+
+    if (storedAuth && !auth) {
+      setAuth(storedAuth);
+    }
+
+    if (storedUser && !currentUser) {
+      setCurrentUser(storedUser);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (currentUser) {
+      authHelper.setUser(currentUser);
+    } else {
+      authHelper.removeUser();
+    }
+  }, [currentUser]);
+
+  const verify = async () => { 
+    // Read token directly from localStorage, not from React state
+    const tokenAuth = authHelper.getAuth();
+    if (!tokenAuth) return;
+
+    try {
+      const { data } = await loadMe();
+      const u = data?.me;
+      if (!u) throw new Error("No user");
+
+      setCurrentUser(u);
+    } catch (e) {
+      const authErrorCodes = ["UNAUTHENTICATED", "UNAUTHORIZED"];
+      const gqlCodes =
+        (e as any)?.graphQLErrors?.map((err: any) => err?.extensions?.code) ||
+        [];
+      const message = String((e as any)?.message || "");
+      const isAuthError =
+        gqlCodes.some((code: string) => authErrorCodes.includes(code)) ||
+        /invalid|expired|access denied|unauthori/i.test(message);
+
+      // Only clear auth when token is actually invalid; avoid logging out on transient errors.
+      if (isAuthError) {
+        saveAuth(undefined);
+        setCurrentUser(undefined);
+      }
+    }
+  };
+
+  const saveAuth = (auth: AuthModel | undefined) => {
+    setAuth(auth);
+    if (auth) {
+      // Persist token and refetch active queries with new headers
+      authHelper.setAuth(auth);
+      // Reset store triggers re-fetch of observable queries
+      client.resetStore().catch(() => {
+        /* noop */
+      });
+    } else {
+      // Remove token and clear cache without refetching
+      authHelper.removeAuth();
+      client.clearStore().catch(() => {
+        /* noop */
+      });
+    }
+  };
+
+  const login = async (email: string, password: string) => {
+    try {
+      const { data: auth } = await axios.post<AuthModel>(LOGIN_URL, {
+        email,
+        password,
+      });
+      saveAuth(auth);
+      const user = await getUser();
+      setCurrentUser(user);
+    } catch (error) {
+      saveAuth(undefined);
+      throw new Error(`Error ${error}`);
+    }
+  };
+
+  const register = async (
+    email: string,
+    password: string,
+    password_confirmation: string,
+  ) => {
+    try {
+      const { data: auth } = await axios.post(REGISTER_URL, {
+        email,
+        password,
+        password_confirmation,
+      });
+      saveAuth(auth);
+      const user = await getUser();
+      setCurrentUser(user);
+    } catch (error) {
+      saveAuth(undefined);
+      throw new Error(`Error ${error}`);
+    }
+  };
+
+  const requestPasswordResetLink = async (email: string) => {
+    const { data } = await client.mutate({
+      mutation: REQUEST_PASSWORD_RESET_LINK,
+      variables: { email },
+      fetchPolicy: "no-cache",
+    });
+
+    const result = data?.requestPasswordResetLink;
+    if (!result?.success) {
+      throw new Error(result?.message || "Failed to send password reset link");
+    }
+  };
+
+  const changePassword = async (
+    email: string,
+    token: string,
+    password: string,
+    password_confirmation: string,
+  ) => {
+    if (password !== password_confirmation) {
+      throw new Error("Passwords do not match");
+    }
+
+    const { data } = await client.mutate({
+      mutation: RESET_PASSWORD_WITH_TOKEN,
+      variables: { token, newPassword: password },
+      fetchPolicy: "no-cache",
+    });
+
+    const result = data?.resetPasswordWithToken;
+    if (!result?.success) {
+      throw new Error(result?.message || "Failed to reset password");
+    }
+  };
+
+  const getUser = async (): Promise<UserModel> => {
+    const { data } = await loadMe();
+    const u = data?.me;
+    return u;
+  };
+
+  const logout = () => {
+    authHelper.setLogoutRedirect();
+    saveAuth(undefined);
+    setCurrentUser(undefined);
+  };
+
+  return (
+    <AuthContext.Provider
+      value={{
+        loading,
+        setLoading,
+        auth,
+        saveAuth,
+        currentUser,
+        setCurrentUser,
+        login,
+        register,
+        requestPasswordResetLink,
+        changePassword,
+        getUser,
+        logout,
+        verify,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export { AuthContext, AuthProvider };

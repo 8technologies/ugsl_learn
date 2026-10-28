@@ -46,6 +46,8 @@ const userTypeDefs = `#graphql
   extend type Query {
     users(limit: Int = 20, offset: Int = 0, search: String, roleId: String): [User!]!
     user(id: ID!): User
+    # The signed-in user
+    me: User
   }
 
   type Mutation {
