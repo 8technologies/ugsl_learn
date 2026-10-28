@@ -65,8 +65,13 @@ export const UnitFormDialog = ({
 
   const handleVideoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
+    if (file && !file.type.startsWith("video/") && !file.type.startsWith("image/")) {
+      setErrorMessage("Choose a video or an image file.");
+      e.target.value = "";
+      return;
+    }
     if (file && file.size > MAX_VIDEO_BYTES) {
-      setErrorMessage("The video must be 50 MB or smaller.");
+      setErrorMessage("The file must be 50 MB or smaller.");
       e.target.value = "";
       return;
     }
@@ -132,17 +137,17 @@ export const UnitFormDialog = ({
                 rows={2}
               />
             </FormField>
-            <FormField label="Sign video">
+            <FormField label="Sign video or image">
               <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-dashed border-gray-300 px-4 py-3 text-sm text-gray-600 transition hover:bg-gray-50">
                 <Video className="h-5 w-5 shrink-0 text-gray-400" />
                 <span className="min-w-0 flex-1 truncate">
                   {video
                     ? video.name
                     : unit?.mediaRef
-                      ? "Has a video — choose a file to replace it"
-                      : "Choose a video (MP4, WebM · up to 50 MB)"}
+                      ? "Has media — choose a file to replace it"
+                      : "Choose a video or image (MP4, WebM, PNG, JPG · up to 50 MB)"}
                 </span>
-                <input type="file" accept="video/*" className="sr-only" onChange={handleVideoChange} />
+                <input type="file" accept="video/*,image/*" className="sr-only" onChange={handleVideoChange} />
               </label>
             </FormField>
             <FormField label="Status">
@@ -173,7 +178,7 @@ export const UnitFormDialog = ({
               <button
                 type="submit"
                 disabled={saving}
-                className="flex-1 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-orange-600 disabled:opacity-50"
+                className="flex-1 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white transition hover:bg-primary-active disabled:opacity-50"
               >
                 {saving ? (video ? "Uploading…" : "Saving…") : unit ? "Save changes" : "Add unit"}
               </button>

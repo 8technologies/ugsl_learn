@@ -166,7 +166,7 @@ const UsersListPage = () => {
             <button
               type="button"
               onClick={openCreateForm}
-              className="flex items-center gap-2 rounded-xl bg-orange-500 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-orange-600"
+              className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-white transition hover:bg-primary-active"
             >
               <UserPlus className="h-4 w-4" />
               New user
@@ -241,7 +241,7 @@ const UsersListPage = () => {
                     <tr key={user.id} className="border-b border-gray-100 transition last:border-0 hover:bg-gray-50">
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-500 text-sm font-bold text-white">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-white">
                             {(user.name || user.username).charAt(0).toUpperCase()}
                           </div>
                           <div className="min-w-0">
@@ -388,7 +388,7 @@ const UsersListPage = () => {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="flex-1 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-orange-600 disabled:opacity-50"
+                  className="flex-1 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white transition hover:bg-primary-active disabled:opacity-50"
                 >
                   {saving ? "Saving…" : isEditing ? "Save changes" : "Create user"}
                 </button>

@@ -114,7 +114,7 @@ const ModulesPage = () => {
             <button
               type="button"
               onClick={() => openForm(null)}
-              className="flex items-center gap-2 rounded-xl bg-orange-500 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-orange-600"
+              className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-primary-active"
             >
               <Plus className="h-4 w-4" />
               New module

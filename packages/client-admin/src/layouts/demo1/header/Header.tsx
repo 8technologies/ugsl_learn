@@ -20,11 +20,11 @@ const Header = () => {
 
   const SearchBar = () => (
     <div className="hidden lg:flex items-center w-full max-w-[520px] mx-4">
-      <label className="input w-full bg-gray-50 border-gray-200 focus-within:ring-2 focus-within:ring-orange-200 rounded-xl">
-        <KeenIcon icon="search-list" className="text-gray-400" />
+      <label className="input w-full bg-white/10 border-white focus-within:ring-2 focus-within:ring-white rounded-md">
+        <KeenIcon icon="search-list" className="text-white/90" />
         <input
           placeholder="Search signs, lessons…"
-          className="form-control placeholder:text-gray-400 text-gray-900 bg-transparent"
+          className="form-control placeholder:text-white text-white bg-transparent"
           // readOnly
         />
       </label>
@@ -34,8 +34,8 @@ const Header = () => {
   return (
     <header
       className={clsx(
-        // White header with a grey bottom border, like the learner app
-        "header fixed top-0 z-10 start-0 end-0 flex items-stretch shrink-0 bg-white text-gray-900 border-b border-gray-200",
+        // UGSL Learn orange header
+        "header fixed top-0 z-10 start-0 end-0 flex items-stretch shrink-0 bg-orange-500 text-white",
         headerSticky && "shadow-sm",
       )}
     >

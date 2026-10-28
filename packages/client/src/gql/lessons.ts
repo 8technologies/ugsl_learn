@@ -112,6 +112,59 @@ export const LOAD_LESSON_UNITS = gql`
   }
 `;
 
+// Learner lesson page: the lesson's header info plus its published units, in order
+/* export const LOAD_LESSON_PLAYER = gql`
+  query LessonPlayer($id: ID!, $lessonId: Int!) {
+    lesson(id: $id) {
+      id
+      title
+      xpReward
+      status
+      module {
+        id
+        title
+        level {
+          id
+          name
+        }
+      }
+    }
+    units(lessonId: $lessonId, status: "published", limit: 200) {
+      id
+      title
+      description
+      sequence
+      mediaRef
+    }
+  }
+`; */
+
+export const LOAD_LESSON_PLAYER = gql`
+query MyQuery {
+  lesson(id: "1") {
+    id
+    title
+    xpReward
+    status
+    units {
+      id
+      title
+      description
+      sequence
+      mediaRef
+    }
+    module {
+      id
+      title
+      level {
+        id
+        name
+      }
+    }
+  }
+}
+`;
+
 // No `id` in the input creates a lesson; with an `id` it updates that lesson
 export const SAVE_LESSON = gql`
   mutation SaveLesson($input: lessonsInput!) {

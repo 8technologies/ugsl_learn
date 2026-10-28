@@ -9,7 +9,7 @@ const demo1LayoutConfig: ILayoutConfig = {
   options: {
     // Sidebar configuration
     sidebar: {
-      theme: "dark", // Dark navy sidebar, matching the learner app
+      theme: "light", // White sidebar
       fixed: true, // Sidebar is fixed in position
       collapse: false, // Sidebar is not collapsed by default
     },

@@ -64,7 +64,11 @@ type MutationResult = { success: boolean; message: string };
 const NAVY = "#2b2f5c";
 
 // Unit videos are saved by the server under public/unitsMedia/
-const unitVideoUrl = (mediaRef: string) => `${URL_2}/unitsMedia/${encodeURIComponent(mediaRef)}`;
+const unitMediaUrl = (mediaRef: string) => `${URL_2}/unitsMedia/${encodeURIComponent(mediaRef)}`;
+
+// Uploads keep their original extension (<uuid>.png, <uuid>.mp4), so the
+// file name tells us whether a unit's sign is a picture or a video
+const isImageMedia = (mediaRef: string) => /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(mediaRef);
 
 // "Letter M" -> "M": the badge shows the thing being taught
 const unitBadge = (title: string) => (title.trim().split(/\s+/).pop() ?? "?").charAt(0).toUpperCase();
@@ -240,7 +244,7 @@ const ModuleLessonsPage = () => {
           <p className="mt-2 text-sm text-gray-500">{moduleError?.message ?? "It may have been deleted."}</p>
           <Link
             to="/content/modules"
-            className="mt-5 inline-block rounded-xl bg-orange-500 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-600"
+            className="mt-5 inline-block rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-white hover:bg-primary-active"
           >
             Back to modules
           </Link>
@@ -381,7 +385,7 @@ const ModuleLessonsPage = () => {
                   <button
                     type="button"
                     onClick={() => setLessonForm({ open: true, lesson: null })}
-                    className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600"
+                    className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-white hover:bg-primary-active"
                   >
                     <Plus className="h-4 w-4" />
                     Add lesson
@@ -412,7 +416,7 @@ const ModuleLessonsPage = () => {
                     <button
                       type="button"
                       onClick={() => setUnitForm({ open: true, unit: null })}
-                      className="flex items-center gap-2 rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-orange-600"
+                      className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-primary-active"
                     >
                       <Plus className="h-4 w-4" />
                       Add unit
@@ -425,7 +429,7 @@ const ModuleLessonsPage = () => {
                       <span>
                         {unitsNeedingVideo.length} {unitsNeedingVideo.length === 1 ? "issue" : "issues"} to fix before
                         this lesson can be submitted: {unitsNeedingVideo.map((u) => u.title).join(", ")}{" "}
-                        {unitsNeedingVideo.length === 1 ? "has" : "have"} no sign video.
+                        {unitsNeedingVideo.length === 1 ? "has" : "have"} no sign video or image.
                       </span>
                     </div>
                   )}
@@ -492,7 +496,21 @@ const ModuleLessonsPage = () => {
                                 </div>
                               </td>
                               <td className="px-3 py-2.5">
-                                {unit.mediaRef ? (
+                                {unit.mediaRef && isImageMedia(unit.mediaRef) ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPlayingUnit(unit)}
+                                    className="block h-9 w-16 overflow-hidden rounded-lg border border-gray-200 transition hover:opacity-90"
+                                    aria-label={`View ${unit.title} image`}
+                                  >
+                                    <img
+                                      src={unitMediaUrl(unit.mediaRef)}
+                                      alt=""
+                                      className="h-full w-full object-cover"
+                                      loading="lazy"
+                                    />
+                                  </button>
+                                ) : unit.mediaRef ? (
                                   <button
                                     type="button"
                                     onClick={() => setPlayingUnit(unit)}
@@ -500,7 +518,7 @@ const ModuleLessonsPage = () => {
                                     style={{ backgroundColor: NAVY }}
                                     aria-label={`Play ${unit.title} video`}
                                   >
-                                    <Play className="h-3.5 w-3.5 fill-current" />
+                                    <Play className="h-3.5 w-3.5 " />
                                   </button>
                                 ) : unit.entryId ? (
                                   <span className="text-xs text-gray-500">Linked sign</span>
@@ -510,7 +528,7 @@ const ModuleLessonsPage = () => {
                                     onClick={() => setUnitForm({ open: true, unit })}
                                     className="flex h-9 w-16 items-center justify-center rounded-lg border border-dashed border-amber-300 bg-amber-50/50 text-[11px] font-semibold text-amber-700 transition hover:bg-amber-50"
                                   >
-                                    No video
+                                    No media
                                   </button>
                                 )}
                               </td>
@@ -518,7 +536,7 @@ const ModuleLessonsPage = () => {
                                 {unit.needsVideo ? (
                                   <span className="flex items-center gap-1.5 text-xs font-semibold text-amber-700">
                                     <CircleAlert className="h-3.5 w-3.5" />
-                                    Needs video
+                                    Needs media
                                   </span>
                                 ) : (
                                   <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
@@ -595,8 +613,8 @@ const ModuleLessonsPage = () => {
                         type="button"
                         onClick={() => void submitForReview()}
                         disabled={!canSubmit || submitting}
-                        title={canSubmit ? undefined : "Every unit needs a sign video first"}
-                        className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-40"
+                        title={canSubmit ? undefined : "Every unit needs a sign video or image first"}
+                        className="rounded-xl bg-primary px-4 py-2 text-sm font-bold text-white transition hover:bg-primary-active disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         {submitting ? "Submitting…" : "Submit lesson for review"}
                       </button>
@@ -650,15 +668,23 @@ const ModuleLessonsPage = () => {
             <DialogTitle>{playingUnit?.title}</DialogTitle>
           </DialogHeader>
           <DialogBody>
-            {playingUnit?.mediaRef && (
-              <video
-                key={playingUnit.id}
-                src={unitVideoUrl(playingUnit.mediaRef)}
-                controls
-                autoPlay
-                className="w-full rounded-xl bg-black"
-              />
-            )}
+            {playingUnit?.mediaRef &&
+              (isImageMedia(playingUnit.mediaRef) ? (
+                <img
+                  key={playingUnit.id}
+                  src={unitMediaUrl(playingUnit.mediaRef)}
+                  alt={playingUnit.title}
+                  className="mx-auto max-h-[70vh] w-auto rounded-xl"
+                />
+              ) : (
+                <video
+                  key={playingUnit.id}
+                  src={unitMediaUrl(playingUnit.mediaRef)}
+                  controls
+                  autoPlay
+                  className="w-full rounded-xl bg-black"
+                />
+              ))}
           </DialogBody>
         </DialogContent>
       </Dialog>

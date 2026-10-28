@@ -50,11 +50,11 @@ module.exports = {
                 inverse: '#ffffff'
               },
               primary: {
-                // Primary = UGSL Learn orange
-                default: '#F97316',
-                active: '#EA580C',
-                light: '#FFF7ED',
-                clarity: 'rgba(249, 115, 22, 0.20)',
+                // Primary (buttons, links, active menu) = UGSL Learn navy
+                default: '#2B2F5C',
+                active: '#1C1F3B',
+                light: '#EEF0F8',
+                clarity: 'rgba(43, 47, 92, 0.20)',
                 inverse: '#ffffff'
               },
               success: {
@@ -116,10 +116,10 @@ module.exports = {
                 inverse: '#ffffff'
               },
               primary: {
-                default: '#FB923C',
-                active: '#F97316',
-                light: '#2A1D14',
-                clarity: 'rgba(251, 146, 60, 0.20)',
+                default: '#6B73C8',
+                active: '#5A62B5',
+                light: '#1C1E33',
+                clarity: 'rgba(107, 115, 200, 0.20)',
                 inverse: '#ffffff'
               },
               success: {

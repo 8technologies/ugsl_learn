@@ -19,7 +19,7 @@ const Breadcrumbs = () => {
       return (
         <Fragment key={`root-${index}`}>
           <span
-            className={clsx(item.active ? "text-gray-900" : "text-gray-500")}
+            className={clsx(item.active ? "text-white" : "text-white/80")}
             key={`item-${index}`}
           >
             {item.title}

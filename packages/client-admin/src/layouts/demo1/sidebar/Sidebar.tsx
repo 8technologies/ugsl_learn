@@ -38,7 +38,7 @@ export const Sidebar = () => {
   const { layout } = useDemo1Layout();
   const themeClass: string =
     layout.options.sidebar.theme === "dark" || pathname === "/dark-sidebar"
-      ? "dark [&.dark]:bg-[#1c1f3b] lg:border-e-[#1c1f3b]" // learner app's sidebar navy
+      ? "dark [&.dark]:bg-coal-600"
       : "dark:bg-coal-600";
 
   const handleMobileSidebarClose = () => {

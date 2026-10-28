@@ -158,7 +158,7 @@ export const LessonFormDialog = ({
               <button
                 type="submit"
                 disabled={saving}
-                className="flex-1 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-orange-600 disabled:opacity-50"
+                className="flex-1 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white transition hover:bg-primary-active disabled:opacity-50"
               >
                 {saving ? "Saving…" : lesson ? "Save changes" : "Add lesson"}
               </button>

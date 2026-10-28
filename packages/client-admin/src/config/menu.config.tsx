@@ -1,5 +1,6 @@
 import { type TMenuConfig } from "@/components/menu";
 import { MODULES_CONFIG } from "@/pages/roles/permissions.config";
+import { BookCheckIcon } from "lucide-react";
 
 // Helper: find permission id by module + permission id
 const byModuleId = Object.fromEntries(MODULES_CONFIG.map((m) => [m.id, m]));
@@ -13,6 +14,18 @@ const getPerm = (moduleId: string, permissionId: string) => {
 // Sidebar menu customized for STTS
 // You can optionally add `requiredPermissions?: string[]` to control visibility
 export const MENU_SIDEBAR: TMenuConfig = [
+  {
+    title: "Dashboard",
+    icon: "home",
+    path: "/",
+    // requiredPermissions
+  },
+  {
+    title: "Dictionary",
+    icon: "storage",
+    path: "/dictionary",
+    // requiredPermissions
+  },
   {
     title: "Content Management",
     icon: "book-open",

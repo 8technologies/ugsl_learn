@@ -33,7 +33,7 @@ const HeaderTopbar = () => {
     <div className="flex items-center gap-2 lg:gap-3.5">
       {/* <button
         onClick={handleOpen}
-        className="btn btn-icon btn-icon-lg size-9 rounded-full hover:bg-gray-100 text-gray-500"
+        className="btn btn-icon btn-icon-lg size-9 rounded-full hover:bg-white/10 text-white"
       >
         <KeenIcon icon="magnifier" />
       </button>
@@ -57,7 +57,7 @@ const HeaderTopbar = () => {
             ],
           }}
         >
-          <MenuToggle className="btn btn-icon btn-icon-lg size-9 rounded-full hover:bg-gray-100 text-gray-500 dropdown-open:bg-gray-100">
+          <MenuToggle className="btn btn-icon btn-icon-lg size-9 rounded-full hover:bg-white/10 text-white dropdown-open:bg-white/10">
             <KeenIcon icon="messages" />
           </MenuToggle>
 
@@ -82,7 +82,7 @@ const HeaderTopbar = () => {
             ],
           }}
         >
-          <MenuToggle className="btn btn-icon btn-icon-lg size-9 rounded-full hover:bg-gray-100 text-gray-500 dropdown-open:bg-gray-100">
+          <MenuToggle className="btn btn-icon btn-icon-lg size-9 rounded-full hover:bg-white/10 text-white dropdown-open:bg-white/10">
             <KeenIcon icon="element-11" />
           </MenuToggle>
 
@@ -107,7 +107,7 @@ const HeaderTopbar = () => {
             ],
           }}
         >
-          <MenuToggle className="btn btn-icon btn-icon-lg relative cursor-pointer size-9 rounded-full hover:bg-gray-100 text-gray-500 dropdown-open:bg-gray-100">
+          <MenuToggle className="btn btn-icon btn-icon-lg relative cursor-pointer size-9 rounded-full hover:bg-white/10 text-white dropdown-open:bg-white/10">
             <KeenIcon icon="notification-status" />
           </MenuToggle>
           {DropdownNotifications({ menuTtemRef: itemNotificationsRef })}
@@ -133,7 +133,7 @@ const HeaderTopbar = () => {
         >
           <MenuToggle className="btn btn-icon rounded-full">
             <img
-              className="size-9 rounded-full border-2 border-orange-200 shrink-0"
+              className="size-9 rounded-full border-2 border-white/60 shrink-0"
               src={
                 currentUser?.image
                   ? `${URL_2}/imgs/${currentUser?.image}`
