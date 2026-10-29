@@ -255,7 +255,7 @@ const LearnPage: NextPage = () => {
         Follow the UGSL curriculum from Beginner to Advanced
       </p>
 
-      <div className="mt-6 flex gap-6 border-b border-gray-200 text-sm font-semibold">
+      <div className="mt-6 flex gap-6  text-sm font-semibold">
         <button
           type="button"
           onClick={() => setTab("path")}

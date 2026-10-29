@@ -268,7 +268,7 @@ const Login = () => {
           {logingIn || loading ? "Please wait..." : "Login"}
         </button>
 
-        <Link
+        {/* <Link
           to={
             currentLayout?.name === "auth-branded"
               ? "/auth/signup"
@@ -277,7 +277,7 @@ const Login = () => {
           className="text-3sm link shrink-0 ml-auto"
         >
           Register
-        </Link>
+        </Link> */}
       </form>
     </div>
   );

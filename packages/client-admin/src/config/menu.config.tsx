@@ -22,7 +22,7 @@ export const MENU_SIDEBAR: TMenuConfig = [
   },
   {
     title: "Dictionary",
-    icon: "storage",
+    icon: "book",
     path: "/dictionary",
     // requiredPermissions
   },
