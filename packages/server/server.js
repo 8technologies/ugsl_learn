@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { yoga } from "./app.js";
-import { host, port } from "./config/config.js";
+import { corsOrigins, host, port } from "./config/config.js";
 import { db } from "./config/database.js";
 import express from "express"
 import cors from "cors";
@@ -25,7 +25,18 @@ app.use((req, res, next) => {
 });
 
 app.use(express.static("public"));
-app.use(cors({ origin: "*", exposedHeaders: ["x-request-id"] }));
+const corsOptions = {
+  origin(origin, callback) {
+    if (!origin || corsOrigins.includes(origin.replace(/\/$/, ""))) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error("Origin is not allowed by CORS"));
+  },
+  exposedHeaders: ["x-request-id"],
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 const loginLimiter = rateLimit({
@@ -46,8 +57,6 @@ const loginLimiter = rateLimit({
     const isLoginOperation =
       operationName === "Login" || /\blogin\s*\(/i.test(query);
 
-      console.log("[loginLimiter]", { operationName, isLoginOperation, willCount: isLoginOperation });
-  
     return !isLoginOperation; 
   },
   handler: (_req, res) => {
@@ -63,7 +72,7 @@ const loginLimiter = rateLimit({
 
 app.use(
   yoga.graphqlEndpoint,
-  cors({ origin: "*", exposedHeaders: ["x-request-id"] }),
+  cors(corsOptions),
   express.json(),
   loginLimiter,
   // File uploads are parsed by Yoga itself (multipart requests). Don't add

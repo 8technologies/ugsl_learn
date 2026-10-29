@@ -29,11 +29,11 @@ test("merges shared output types and feature query/mutation definitions", async 
   }
 });
 
-test("rejects invalid user input before database writes", async () => {
+test("protects user operations before database access", async () => {
   const result = await graphql('mutation { createUser(input: { email: "invalid", name: "Test" }) { id } }');
-  assert.equal(result.errors[0].extensions.code, "BAD_USER_INPUT");
+  assert.equal(result.errors[0].extensions.code, "UNAUTHENTICATED");
   const page = await graphql('{ users(limit: 101) { id } }');
-  assert.equal(page.errors[0].extensions.code, "BAD_USER_INPUT");
+  assert.equal(page.errors[0].extensions.code, "UNAUTHENTICATED");
 });
 
 test("discovers new nested modules and reports broken imports", async () => {

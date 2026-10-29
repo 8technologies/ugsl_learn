@@ -1,7 +1,8 @@
-const MAIN_URL = "http://localhost:4000/graphql";
-// const MAIN_URL = "https://api.seedtracking.net/graphql";
-const URL_2 = "http://localhost:4000";
-// const URL_2 = "https://api.seedtracking.net";
+const URL_2 = (import.meta.env.VITE_API_BASE_URL || "http://localhost:4000").replace(
+  /\/$/,
+  "",
+);
+const MAIN_URL = import.meta.env.VITE_GRAPHQL_URL || `${URL_2}/graphql`;
 
 export { MAIN_URL, URL_2 };
- 
+
