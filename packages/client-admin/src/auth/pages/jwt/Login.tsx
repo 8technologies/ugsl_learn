@@ -190,6 +190,8 @@ const Login = () => {
 
         {error?.message && <Alert variant="danger">{error?.message}</Alert>}
 
+        {formik.status && <Alert variant="danger">{formik.status}</Alert>}
+
         <div className="flex flex-col gap-1">
           <label className="form-label text-gray-900">Email</label>
           <label className="input">

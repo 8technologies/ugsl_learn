@@ -29,18 +29,31 @@ const decodeJWTPayload = (token?: string) => {
   }
 };
 
-// JWT permissions come as an array of single-key objects: [{ permA: true }, { permB: true }]
-const flattenPermissions = (permissions: any): FlatPermissions => {
+// Roles created by older data use an array of permission objects, while newer
+// roles store one flat JSON object. Accept both shapes so valid staff accounts
+// are not rejected at login.
+const flattenPermissions = (permissions: unknown): FlatPermissions => {
   const flat: FlatPermissions = {};
+
   if (Array.isArray(permissions)) {
     for (const item of permissions) {
+      if (typeof item === "string") {
+        flat[item] = true;
+        continue;
+      }
+
       if (item && typeof item === "object") {
         for (const [k, v] of Object.entries(item)) {
           if (v) flat[k] = true;
         }
       }
     }
+  } else if (permissions && typeof permissions === "object") {
+    for (const [key, value] of Object.entries(permissions)) {
+      if (value) flat[key] = true;
+    }
   }
+
   return flat;
 };
 
