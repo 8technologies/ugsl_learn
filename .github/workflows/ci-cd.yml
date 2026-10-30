@@ -105,12 +105,12 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.target }}
 
   deploy:
-    name: Deploy production
+    name: Deploy staging
     if: vars.DEPLOY_ENABLED == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: publish
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: production
+    environment: staging
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}

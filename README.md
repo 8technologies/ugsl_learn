@@ -67,7 +67,7 @@ front of:
 
 The .github/workflows/ci-cd.yml workflow runs API tests and production builds on
 pull requests to main. A push to main also publishes three images to
-GHCR. Production deployment is enabled only when the repository variable
+GHCR. Staging deployment is enabled only when the repository variable
 DEPLOY_ENABLED equals true.
 
 Configure these GitHub repository variables:
@@ -79,7 +79,7 @@ Configure these GitHub repository variables:
 | DEPLOY_PATH | /opt/ugsl-learn |
 | DEPLOY_ENABLED | true after the server is prepared |
 
-Configure these secrets in the protected production environment:
+Configure these secrets in the protected staging environment:
 
 | Secret | Purpose |
 | --- | --- |
@@ -89,7 +89,7 @@ Configure these secrets in the protected production environment:
 | DEPLOY_KNOWN_HOSTS | Verified ssh-keyscan output for that server |
 
 Keep .env.production only on the server. GitHub does not upload or replace it.
-Use required reviewers on the production environment if deployments should
+Use required reviewers on the staging environment if deployments should
 pause for approval after images are built.
 
 The admin application currently bundles successfully but has inherited
