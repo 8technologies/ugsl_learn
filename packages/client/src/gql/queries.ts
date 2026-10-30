@@ -62,6 +62,20 @@ export const MY_PROFILE = gql`
   }
 `;
 
+// The signed-in user's role permissions, for showing/hiding navigation
+export const MY_PERMISSIONS = gql`
+  query MyPermissions($userId: ID!) {
+    user(id: $userId) {
+      id
+      role {
+        id
+        name
+        permissions
+      }
+    }
+  }
+`;
+
 export const ROLES = gql`
   query Roles {
     roles {

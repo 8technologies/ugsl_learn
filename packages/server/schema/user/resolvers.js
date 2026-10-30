@@ -168,6 +168,15 @@ const userResolvers = {
       return getUsers({ limit, offset, search, role_id: roleId });
     },
     user: (_parent, { id }, { db }) => db.user.findUnique({ where: { id } }),
+    me: (_parent, _args, context) => {
+      const userId = context.req?.user?.id;
+      if (!userId) {
+        throw new GraphQLError("Please sign in to continue.", {
+          extensions: { code: "UNAUTHENTICATED" },
+        });
+      }
+      return context.db.user.findFirst({ where: { id: userId, deleted: false } });
+    },
   },
   Mutation: {
     // Accounts made by an admin are trusted, so they skip email verification

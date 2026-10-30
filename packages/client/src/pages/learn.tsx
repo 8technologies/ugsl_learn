@@ -1,4 +1,5 @@
 import type { NextPage } from "next";
+import Link from "next/link";
 import { useRouter } from "next/router";
 import React, { useEffect, useState } from "react";
 import { Check, Lock, Play } from "lucide-react";
@@ -48,7 +49,9 @@ const toLearningPath = (modules: PathModule[]): LearningUnit[] => {
   });
 };
 
-const nodePosition = (globalIndex: number): "center" | "left" | "right" =>
+const lessonHref = (lessonId: string) => ({ pathname: "/lesson", query: { id: lessonId } });
+
+const nodePosition =(globalIndex: number): "center" | "left" | "right" =>
   (["center", "left", "right"] as const)[globalIndex % 3] ?? "center";
 
 const nodeOffsetClassName: Record<"center" | "left" | "right", string> = {
@@ -81,6 +84,7 @@ const NodeCircle = ({ status }: { status: LearningNodeStatus }) => {
 
 const LearningPathView = ({ units }: { units: LearningUnit[] }) => {
   let globalIndex = 0;
+  console.log(units);
 
   return (
     <div className="flex flex-col gap-10">
@@ -110,14 +114,8 @@ const LearningPathView = ({ units }: { units: LearningUnit[] }) => {
             {unit.nodes.map((node: LearningNode) => {
               const position = nodePosition(globalIndex);
               globalIndex += 1;
-              return (
-                <div
-                  key={node.id}
-                  className={[
-                    "relative flex flex-col items-center gap-2",
-                    nodeOffsetClassName[position],
-                  ].join(" ")}
-                >
+              const nodeContent = (
+                <>
                   <NodeCircle status={node.status} />
                   <div className="text-center">
                     <div className="text-sm font-bold text-gray-900">
@@ -136,8 +134,26 @@ const LearningPathView = ({ units }: { units: LearningUnit[] }) => {
                         : `+${node.xp} XP`}
                     </div>
                   </div>
-                </div>
+                </>
               );
+              const nodeClassName = [
+                "relative flex flex-col items-center gap-2",
+                nodeOffsetClassName[position],
+              ].join(" ");
+              // Locked lessons can't be opened yet
+              return node.status === "locked" ? (
+                <div key={node.id} className={nodeClassName}>
+                  {nodeContent}
+                </div>
+              ) : (
+                <Link
+                  key={node.id}
+                  href={lessonHref(node.id)}
+                  className={`${nodeClassName} rounded-2xl transition hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-orange-500`}
+                >
+                  {nodeContent}
+                </Link>
+              ); 
             })}
           </div>
         </div>
@@ -185,7 +201,16 @@ const ModuleListView = ({ units }: { units: LearningUnit[] }) => (
                 ) : (
                   <Lock className="h-4 w-4 text-gray-300" />
                 )}
-                <span className="font-semibold text-gray-800">{node.label}</span>
+                {node.status === "locked" ? (
+                  <span className="font-semibold text-gray-800">{node.label}</span>
+                ) : (
+                  <Link
+                    href={lessonHref(node.id)}
+                    className="font-semibold text-gray-800 hover:text-orange-500 hover:underline"
+                  >
+                    {node.label}
+                  </Link>
+                )}
               </div>
               <span className="text-xs font-semibold text-gray-400">
                 +{node.xp} XP
@@ -230,7 +255,7 @@ const LearnPage: NextPage = () => {
         Follow the UGSL curriculum from Beginner to Advanced
       </p>
 
-      <div className="mt-6 flex gap-6 border-b border-gray-200 text-sm font-semibold">
+      <div className="mt-6 flex gap-6  text-sm font-semibold">
         <button
           type="button"
           onClick={() => setTab("path")}

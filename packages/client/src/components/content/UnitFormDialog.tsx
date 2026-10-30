@@ -50,9 +50,9 @@ export const UnitFormDialog = ({
   const [video, setVideo] = useState<File | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [saveUnit, { loading: savingWithoutVideo }] = useMutation<SaveUnitResult>(SAVE_UNIT_MUTATION);
-
-  const [saveUnit1, ] = useMutation( SAVE_UNIT_MUTATION, {
+  const [saveUnit, { loading: savingWithoutVideo }] = useMutation<SaveUnitResult>(
+    SAVE_UNIT_MUTATION,
+    {
     awaitRefetchQueries: true,
     // refetchQueries: [
     //   {
@@ -64,7 +64,8 @@ export const UnitFormDialog = ({
     //     },
     //   },
     // ],
-  });
+    },
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -112,13 +113,13 @@ export const UnitFormDialog = ({
 
         setUploading(true);
 
-         result = (await saveUnit1({ variables: { input } })).data;
+         result = (await saveUnit({ variables: { input } })).data;
 
 
         setUploading(true);
         
       } else {
-        result = (await saveUnit1({ variables: { input } })).data;
+        result = (await saveUnit({ variables: { input } })).data;
       }
 
       if (!result?.saveUnit.success) {

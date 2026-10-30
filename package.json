@@ -2,9 +2,13 @@
   "name": "ugsl-learn",
   "private": true,
   "type": "module",
+  "packageManager": "bun@1.3.5",
   "workspaces": ["packages/*"],
   "scripts": {
     "dev": "npm run dev --workspace=@ugsl/server",
+    "build:web": "bun run --cwd packages/client build",
+    "build:admin": "bun run --cwd packages/client-admin build",
+    "check": "bun run test && bun run build:web && bun run build:admin",
     "start": "npm run start --workspace=@ugsl/server",
     "test": "npm run test --workspace=@ugsl/server",
     "test:integration": "npm run test:integration --workspace=@ugsl/server",

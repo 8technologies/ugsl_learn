@@ -100,10 +100,14 @@ export const getUnits = async ({ limit = 50, offset = 0, lessonId, search, statu
 
 const UNIT_VIDEO_MAX_SIZE = 50 * 1024 * 1024;
 
-// Stores an uploaded sign video and returns its path for Unit.mediaRef
+// Stores an uploaded sign video or image and returns its file name for Unit.mediaRef
 async function saveUnitMedia(file) {
   const upload = await file;
-  // if (!upload?.mimetype?.startsWith("video/") || !upload?.mimetype?.startsWith("image/")) throw badInput("The unit video must be a video file.");
+  // Yoga gives a web File (`type`); graphql-upload style objects use `mimetype`
+  const mediaType = upload?.type ?? upload?.mimetype ?? "";
+  if (!mediaType.startsWith("video/") && !mediaType.startsWith("image/")) {
+    throw badInput("The unit's sign must be a video or an image file.");
+  }
   const saved = await saveUpload({ file: upload, subdir: "unitsMedia", maxSize: UNIT_VIDEO_MAX_SIZE });
   return saved.filename;
 }
