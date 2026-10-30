@@ -62,6 +62,20 @@ const quizTypeDefs = `#graphql
         saveQuiz(input: quizInput!): ResponseMessage!
         saveQuizQuestion(input: quizQuestionInput!): ResponseMessage!
         deleteQuizQuestion(id: ID!): ResponseMessage!
+
+        saveQuizAttempt(input: attemptInput!): ResponseMessage!
+    }
+
+    # XP, streaks, lesson and module progress are worked out on the server
+    input attemptInput {
+        quizId: Int!
+        lessonId: Int!
+        # Percentage of questions answered correctly (0-100)
+        score: Float!
+        # Answers and timing, kept on the learner's lesson progress
+        metadata: JSON
+        # Hearts left after the quiz; omit to leave them unchanged
+        hearts: Int
     }
 
     input quizInput {
@@ -95,6 +109,7 @@ const quizTypeDefs = `#graphql
         # New sign video for the option; omit to keep the current one
         video: Upload
     }
+
 `;
 
 export default quizTypeDefs;
