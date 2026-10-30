@@ -1,98 +1,70 @@
-# UgSL Learn
 
-UgSL Learn contains three deployable services:
 
-- packages/server: Bun, Express, GraphQL Yoga, Prisma, and MariaDB API
-- packages/client: Next.js learner application
-- packages/client-admin: Vite administration application
 
-The repository uses Bun 1.3.5 and its root lockfile as the reproducible package
-manager for local validation, containers, and CI.
+## After pulling project updates
 
-## Local validation
+```sh
+npm ci
+npm run db:generate
+npm run db:deploy
+npm run db:status
+npm test
+npm run dev
+```
 
-~~~sh
-bun install --frozen-lockfile
-cp packages/server/.env.example packages/server/.env
-bun run --cwd packages/server db:generate
-bun run check
-~~~
+Use `db:deploy` to apply migrations committed by other developers. Run `db:seed`
+again only if you want to restore the example user; it is safe to repeat.
 
-The API tests do not require a live database unless RUN_DB_TESTS=1 is set.
+## Deployment
 
-## Deployment model
+Provision a MySQL/MariaDB database and configure these environment variables on
+the deployment platform:
 
-The production baseline is Docker Compose on a Linux host:
+```dotenv
+NODE_ENV=production
+HOST=0.0.0.0
+PORT=4000
+DATABASE_URL="mysql://APP_USER:ENCODED_PASSWORD@DB_HOST:3306/ugsl_learn"
+DB_CONNECTION_LIMIT=5
+```
 
-- MariaDB data is stored in the database-data volume.
-- API uploads are stored in the uploaded-media volume.
-- learner, admin, and API ports bind to loopback so a host-level reverse proxy
-  can provide domains and TLS.
-- database migrations run as a one-off task before updated services start.
-- images use the Git commit SHA, so a previous release can be restored by
-  changing IMAGE_TAG.
+Use the platform-provided `PORT` when applicable. Percent-encode special characters
+in credentials. Configure TLS in `config/database.js` if your database provider
+requires it; the starter's connection configuration targets local XAMPP.
 
-Copy the production environment template on the server:
+Run the following in the release/build environment using the target database URL:
 
-~~~sh
-mkdir -p /opt/ugsl-learn
-cd /opt/ugsl-learn
-cp .env.production.example .env.production
-~~~
+```sh
+# Include the Prisma CLI, even when NODE_ENV is production.
+npm ci --include=dev
+npm run db:generate
 
-Fill every secret and replace the example domains. If the GitHub Container
-Registry packages are private, log the deployment server into GHCR with a
-read-packages token:
+# Run once per release against the target database, before starting the new app.
+npm run db:deploy
+npm run db:status
 
-~~~sh
-docker login ghcr.io
-~~~
+# Runtime start command:
+npm start
+```
 
-For a manual deployment from a checkout:
+Keep the generated `packages/server/generated/prisma/` directory in the deployment
+artifact. Node.js loads Prisma's generated TypeScript client directly, so the
+application does not need a separate compilation step.
 
-~~~sh
-IMAGE_REPOSITORY=ghcr.io/8technologies/ugsl_learn \
-IMAGE_TAG=<git-commit-sha> \
-sh scripts/deploy.sh
-~~~
+Use `db:deploy` in production. `db:migrate` is the interactive development command.
+Seeding is optional and is not part of the production startup sequence. On later
+deployments, repeat the release commands, then restart the running application
+using your host's process manager or service controls.
 
-The host needs Docker Engine with the Compose plugin. Put a reverse proxy in
-front of:
+GraphiQL is disabled in production. Verify the endpoint with:
 
-- 127.0.0.1:3000 for the learner domain
-- 127.0.0.1:8080 for the admin domain
-- 127.0.0.1:4000 for the API domain
+```sh
+curl http://127.0.0.1:4000/graphql \
+  -H 'Content-Type: application/json' \
+  --data '{"query":"{ health { success message } }"}'
+```
 
-## GitHub Actions CI/CD
+The health query verifies API availability; the integration tests exercise actual
+database reads and writes. This starter implements public User CRUD, not login or
+authorization. Add access control before exposing user management publicly.
 
-The .github/workflows/ci-cd.yml workflow runs API tests and production builds on
-pull requests to main. A push to main also publishes three images to
-GHCR. Staging deployment is enabled only when the repository variable
-DEPLOY_ENABLED equals true.
-
-Configure these GitHub repository variables:
-
-| Variable | Example |
-| --- | --- |
-| PRODUCTION_API_URL | https://api.staging.8jobspot.com |
-| PRODUCTION_GRAPHQL_URL | https://api.staging.8jobspot.com/graphql |
-| DEPLOY_PATH | /opt/ugsl-learn |
-| DEPLOY_ENABLED | true after the server is prepared |
-
-Configure these secrets in the protected staging environment:
-
-| Secret | Purpose |
-| --- | --- |
-| DEPLOY_HOST | Deployment server hostname or IP |
-| DEPLOY_USER | SSH user allowed to run Docker |
-| DEPLOY_SSH_KEY | Private deployment key |
-| DEPLOY_KNOWN_HOSTS | Verified ssh-keyscan output for that server |
-
-Keep .env.production only on the server. GitHub does not upload or replace it.
-Use required reviewers on the staging environment if deployments should
-pause for approval after images are built.
-
-The admin application currently bundles successfully but has inherited
-TypeScript errors, so its standalone typecheck is not yet a CI gate. Track that
-cleanup separately and add the typecheck command to CI once the existing errors
-are resolved.
