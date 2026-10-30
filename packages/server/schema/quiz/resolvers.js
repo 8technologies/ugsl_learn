@@ -7,6 +7,25 @@ import saveUpload from "../../helpers/saveUpload.js";
 
 const QUESTION_TYPES = ["watch_match", "multiple_choice", "sign_recall", "video_record", "fill_blank"];
 const QUIZ_MEDIA_MAX_SIZE = 50 * 1024 * 1024;
+const MAX_HEARTS = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Streaks count calendar days (UTC), matching learner_stats.last_active_date
+function startOfUtcDay(date) {
+  const day = new Date(date);
+  day.setUTCHours(0, 0, 0, 0);
+  return day;
+}
+
+// True when the learner has completed every published lesson in the module
+async function isModuleCompleted(tx, learnerId, moduleId) {
+  const lessonWhere = { moduleId, status: "published", deleted: false };
+  const [lessonCount, completedCount] = await Promise.all([
+    tx.lesson.count({ where: lessonWhere }),
+    tx.learnerProgress.count({ where: { learnerId, status: "completed", lesson: lessonWhere } }),
+  ]);
+  return lessonCount > 0 && completedCount >= lessonCount;
+}
 
 function badInput(message) {
   return new GraphQLError(message, { extensions: { code: "BAD_USER_INPUT" } });
@@ -81,15 +100,16 @@ async function replaceOptions(tx, questionId, options) {
     rows.push({ id: option.id ? toIntId(option.id) : null, data });
   }
 
+  // Only this question's own options can be updated by id
+  const existing = await tx.quizOption.findMany({ where: { questionId }, select: { id: true } });
+  const existingIds = new Set(existing.map((option) => option.id));
   const keptIds = rows.filter((row) => row.id).map((row) => row.id);
+  if (keptIds.some((id) => !existingIds.has(id))) throw badInput("An option does not belong to this question.");
+
   await tx.quizOption.deleteMany({ where: { questionId, id: { notIn: keptIds } } });
 
   for (const row of rows) {
-    if (row.id) {
-      await tx.quizOption.updateMany({ where: { id: row.id, questionId }, data: row.data });
-    } else {
-      await tx.quizOption.create({ data: { ...row.data, questionId } });
-    }
+    await saveData({ model: "quizOption", data: row.id ? row.data : { ...row.data, questionId }, id: row.id, tx });
   }
 }
 
@@ -206,6 +226,140 @@ const quizResolvers = {
       } catch (error) {
         if (error instanceof GraphQLError) throw error;
         throw new GraphQLError(`Failed to delete question: ${error.message}`);
+      }
+    },
+
+    saveQuizAttempt: async (_parent, { input }, context) => {
+      const userId = context?.req?.user?.id;
+      if (!userId) {
+        throw new GraphQLError("Please sign in to continue.", { extensions: { code: "UNAUTHENTICATED" } });
+      }
+
+      try {
+        const { quizId, lessonId, score, metadata, hearts } = input;
+        if (score < 0 || score > 100) throw badInput("Score must be between 0 and 100.");
+        if (hearts != null && (hearts < 0 || hearts > MAX_HEARTS)) {
+          throw badInput(`Hearts must be between 0 and ${MAX_HEARTS}.`);
+        }
+
+        const quiz = await db.quiz.findUnique({ where: { id: quizId } });
+        if (!quiz || quiz.deleted || quiz.lessonId !== lessonId) {
+          throw badInput(`Quiz ${quizId} does not belong to lesson ${lessonId}.`);
+        }
+        const lesson = await db.lesson.findUnique({ where: { id: lessonId } });
+        if (!lesson || lesson.deleted) throw badInput(`Lesson ${lessonId} does not exist.`);
+
+        const passed = score >= quiz.passThreshold;
+        const now = new Date();
+        const today = startOfUtcDay(now);
+
+        const result = await db.$transaction(async (tx) => {
+          // Learners get a profile the first time they finish a quiz
+          const learner = await tx.learnerProfile.findUnique({ where: { userId } });
+          const learnerId = learner?.id ?? (await saveData({ model: "learnerProfile", data: { userId }, tx }));
+
+          await saveData({
+            model: "quizAttempt",
+            data: { learnerId, quizId, score, startedAt: now, completedAt: now },
+            tx,
+          });
+
+          // A completed lesson stays completed even if a later retry fails
+          const progress = await tx.learnerProgress.findUnique({
+            where: { learnerId_lessonId: { learnerId, lessonId } },
+          });
+          const wasCompleted = progress?.status === "completed";
+          const firstCompletion = passed && !wasCompleted;
+
+          const progressData = {
+            status: wasCompleted || passed ? "completed" : "in_progress",
+            score: Math.round(score),
+            metadata,
+            ...(firstCompletion && { completedAt: now }),
+          };
+          await saveData({
+            model: "learnerProgress",
+            data: progress ? progressData : { ...progressData, learnerId, lessonId },
+            id: progress?.id,
+            tx,
+          });
+
+          // XP is only earned the first time a lesson (or module) is completed
+          let xpEarned = firstCompletion ? lesson.xpReward : 0;
+          const moduleCompleted = firstCompletion && (await isModuleCompleted(tx, learnerId, lesson.moduleId));
+
+          const moduleProgress = await tx.learnerModuleProgress.findUnique({
+            where: { learnerId_moduleId: { learnerId, moduleId: lesson.moduleId } },
+          });
+          if (moduleProgress?.status !== "completed") {
+            const moduleData = moduleCompleted
+              ? { status: "completed", completedAt: now }
+              : { status: "in_progress" };
+            await saveData({
+              model: "learnerModuleProgress",
+              data: moduleProgress ? moduleData : { ...moduleData, learnerId, moduleId: lesson.moduleId },
+              id: moduleProgress?.id,
+              tx,
+            });
+          }
+
+          if (moduleCompleted) {
+            const module = await tx.module.findUnique({ where: { id: lesson.moduleId } });
+            xpEarned += module.xpReward;
+
+            // Modules that required this one can now be started
+            const unlocked = await tx.module.findMany({
+              where: { requiresModuleId: lesson.moduleId, deleted: false },
+              select: { id: true },
+            });
+            for (const { id: moduleId } of unlocked) {
+              const next = await tx.learnerModuleProgress.findUnique({
+                where: { learnerId_moduleId: { learnerId, moduleId } },
+              });
+              if (next && next.status !== "locked") continue;
+              await saveData({
+                model: "learnerModuleProgress",
+                data: next ? { status: "available" } : { learnerId, moduleId, status: "available" },
+                id: next?.id,
+                tx,
+              });
+            }
+          }
+
+          // Streak goes up once per day of activity and resets after a missed day
+          const stats = await tx.learnerStats.findUnique({ where: { learnerId } });
+          const lastActive = stats?.lastActiveDate ? startOfUtcDay(stats.lastActiveDate) : null;
+          const daysSinceActive = lastActive ? Math.round((today - lastActive) / DAY_MS) : null;
+          let currentStreak = stats?.currentStreak ?? 0;
+          if (daysSinceActive === null || daysSinceActive > 1) currentStreak = 1;
+          else if (daysSinceActive === 1) currentStreak += 1;
+          const longestStreak = Math.max(stats?.longestStreak ?? 0, currentStreak);
+
+          // learner_stats is keyed by learnerId, so that is the id column saveData updates by
+          const statsData = {
+            totalXp: (stats?.totalXp ?? 0) + xpEarned,
+            currentStreak,
+            longestStreak,
+            lastActiveDate: today,
+            ...(hearts != null && { hearts }),
+          };
+          await saveData({
+            model: "learnerStats",
+            data: stats ? statsData : { ...statsData, learnerId },
+            id: stats ? learnerId : null,
+            idColumn: "learnerId",
+            tx,
+          });
+
+          return { xpEarned, moduleCompleted };
+        });
+
+        let message = passed ? "Quiz passed" : "Quiz not passed";
+        if (result.xpEarned) message += ` · +${result.xpEarned} XP`;
+        if (result.moduleCompleted) message += " · module completed";
+        return { success: true, message };
+      } catch (error) {
+        rethrow(error, "quiz attempt");
       }
     },
   },

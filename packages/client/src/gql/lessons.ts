@@ -140,29 +140,29 @@ export const LOAD_LESSON_UNITS = gql`
 `; */
 
 export const LOAD_LESSON_PLAYER = gql`
-query MyQuery {
-  lesson(id: "1") {
-    id
-    title
-    xpReward
-    status
-    units {
+  query LessonPlayer($id: ID!) {
+    lesson(id: $id) {
       id
       title
-      description
-      sequence
-      mediaRef
-    }
-    module {
-      id
-      title
-      level {
+      xpReward
+      status
+      units {
         id
-        name
+        title
+        description
+        sequence
+        mediaRef
+      }
+      module {
+        id
+        title
+        level {
+          id
+          name
+        }
       }
     }
   }
-}
 `;
 
 // No `id` in the input creates a lesson; with an `id` it updates that lesson
@@ -229,6 +229,34 @@ export const SAVE_MODULES = gql`
     saveModule(input: $input) {
       message
       success
+    }
+  }
+`;
+
+// A lesson's quiz with its questions and their answer options
+export const LOAD_LESSONQUIZ = gql`
+  query LessonQuiz($lessonId: Int!) {
+    lessonQuiz(lessonId: $lessonId) {
+      id
+      lessonId
+      passThreshold
+      status
+      updatedAt
+      quizQuestions {
+        id
+        questionType
+        prompt
+        mediaRef
+        sequence
+        correctAnswer
+        updatedAt
+        Options {
+          id
+          label
+          mediaRef
+          correctFlag
+        }
+      }
     }
   }
 `;

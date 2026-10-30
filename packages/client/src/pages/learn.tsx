@@ -256,7 +256,7 @@ const LearnPage: NextPage = () => {
       </p>
 
       <div className="mt-6 flex gap-6  text-sm font-semibold">
-        <button
+        {/* <button
           type="button"
           onClick={() => setTab("path")}
           className={[
@@ -267,7 +267,7 @@ const LearnPage: NextPage = () => {
           ].join(" ")}
         >
           Learning Path
-        </button>
+        </button> */}
         <button
           type="button"
           onClick={() => setTab("modules")}
@@ -292,9 +292,10 @@ const LearnPage: NextPage = () => {
         ) : units.length === 0 ? (
           <p className="py-10 text-center text-gray-500">No lessons are published yet. Check back soon!</p>
         ) : tab === "path" ? (
-          <LearningPathView units={units} />
-        ) : (
           <ModuleListView units={units} />
+        ) : (
+          
+          <LearningPathView units={units} />
         )}
       </div>
     </AppShell>

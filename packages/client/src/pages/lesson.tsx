@@ -1,26 +1,21 @@
 import type { NextPage } from "next";
 import Head from "next/head";
-import Image from "next/image";
 import Link from "next/link";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import {
-  AppleSvg,
   BigCloseSvg,
-  BoySvg,
   DoneSvg,
   LessonFastForwardEndFailSvg,
   LessonFastForwardEndPassSvg,
   LessonFastForwardStartSvg,
   LessonTopBarEmptyHeart,
   LessonTopBarHeart,
-  WomanSvg,
 } from "~/components/Svgs";
-import womanPng from "../../public/woman.png";
 import { useBoundStore } from "~/hooks/useBoundStore";
 import { useRouter } from "next/router";
 import { useQuery } from "@apollo/client/react";
 import { env } from "~/env.mjs";
-import { LOAD_LESSON_PLAYER, LOAD_LESSON_UNITS } from "~/gql/lessons";
+import { LOAD_LESSON_PLAYER, LOAD_LESSONQUIZ } from "~/gql/lessons";
 
 /* -------------------------------------------------------------------------- */
 /*  Data                                                                       */
@@ -52,6 +47,66 @@ type LessonUnit = {
   mediaRef?: string;
   isImage: boolean;
 };
+
+type QuestionType = "watch_match" | "multiple_choice" | "sign_recall" | "video_record" | "fill_blank";
+
+type QuizOptionResult = {
+  id: number;
+  label: string | null;
+  mediaRef: string | null;
+  correctFlag: boolean;
+};
+
+type QuizQuestionResult = {
+  id: number;
+  questionType: string;
+  prompt: string | null;
+  mediaRef: string | null;
+  sequence: number;
+  correctAnswer: unknown;
+  Options: QuizOptionResult[] | null;
+};
+
+type LessonQuizResult = {
+  lessonQuiz: {
+    id: string;
+    passThreshold: number | null;
+    status: string | null;
+    quizQuestions: QuizQuestionResult[] | null;
+  }[];
+};
+
+type QuizOption = {
+  id: number;
+  letter: string;
+  label: string;
+  /** Full URL of the option's sign video or image (multiple choice). */
+  mediaRef?: string;
+  isImage: boolean;
+  correct: boolean;
+};
+
+type QuizQuestion = {
+  id: number;
+  type: QuestionType;
+  prompt: string;
+  mediaRef?: string;
+  isImage: boolean;
+  /** Expected text for fill blank, sign recall and video record questions. */
+  answerText: string;
+  options: QuizOption[];
+};
+
+type LessonQuiz = {
+  passThreshold: number;
+  questions: QuizQuestion[];
+};
+
+/** What the learner gave: an option, typed text, or their own verdict on a signed answer. */
+type QuizAnswer =
+  | { kind: "option"; optionId: number }
+  | { kind: "text"; value: string }
+  | { kind: "self"; correct: boolean };
 
 type LessonPlayerResult = {
   lesson: {
@@ -102,28 +157,81 @@ const toLessonUnits = (units: LessonUnitsResult[]): LessonUnit[] =>
       };
     });
 
-const lessonProblem1 = {
-  type: "SELECT_1_OF_3",
-  question: `Which one of these is "the apple"?`,
-  answers: [
-    { icon: <AppleSvg />, name: "la manzana" },
-    { icon: <BoySvg />, name: "el niño" },
-    { icon: <WomanSvg />, name: "la mujer" },
-  ],
-  correctAnswer: 0,
-} as const;
+// Quiz media is stored in the server's public/quizMedia folder
+const quizMediaUrl = (mediaRef: string) =>
+  new URL(`/quizMedia/${encodeURIComponent(mediaRef)}`, env.NEXT_PUBLIC_GRAPHQL_URL).toString();
 
-const lessonProblem2 = {
-  type: "WRITE_IN_ENGLISH",
-  question: "El niño",
-  answerTiles: ["woman", "milk", "water", "I", "The", "boy"],
-  correctAnswer: [4, 5],
-} as const;
+const QUESTION_TYPES: QuestionType[] = ["watch_match", "multiple_choice", "sign_recall", "video_record", "fill_blank"];
+const OPTION_LETTERS = "ABCDEF";
 
-const lessonProblems = [lessonProblem1, lessonProblem2];
+// correctAnswer is JSON on the server; text answers are stored as plain strings
+const answerText = (value: unknown) =>
+  value == null ? "" : typeof value === "string" ? value : JSON.stringify(value);
 
-const numbersEqual = (a: readonly number[], b: readonly number[]): boolean => {
-  return a.length === b.length && a.every((_, i) => a[i] === b[i]);
+const sameText = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+const toQuizQuestion = (question: QuizQuestionResult): QuizQuestion => {
+  const type = QUESTION_TYPES.find((t) => t === question.questionType) ?? "watch_match";
+  return {
+    id: question.id,
+    type,
+    prompt: question.prompt ?? "",
+    mediaRef: question.mediaRef ? quizMediaUrl(question.mediaRef) : undefined,
+    isImage: question.mediaRef ? isImageMedia(question.mediaRef) : false,
+    answerText: answerText(question.correctAnswer),
+    options: (question.Options ?? []).map((option, i) => ({
+      id: option.id,
+      letter: OPTION_LETTERS[i] ?? "?",
+      label: option.label ?? "",
+      mediaRef: option.mediaRef ? quizMediaUrl(option.mediaRef) : undefined,
+      isImage: option.mediaRef ? isImageMedia(option.mediaRef) : false,
+      correct: option.correctFlag,
+    })),
+  };
+};
+
+const isOptionQuestion = (question: QuizQuestion) =>
+  question.type === "watch_match" || question.type === "multiple_choice";
+
+// Questions a learner can't answer (no correct option / no expected text) are left out
+const isAnswerable = (question: QuizQuestion) =>
+  isOptionQuestion(question)
+    ? question.options.some((option) => option.correct)
+    : question.answerText.trim() !== "";
+
+// Learners only get a published quiz; a lesson without one completes after its units
+const toLessonQuiz = (result: LessonQuizResult | undefined): LessonQuiz | null => {
+  const quiz = result?.lessonQuiz.find((q) => q.status === "published");
+  if (!quiz) return null;
+  const questions = [...(quiz.quizQuestions ?? [])]
+    .sort((a, b) => a.sequence - b.sequence)
+    .map(toQuizQuestion)
+    .filter(isAnswerable);
+  return questions.length ? { passThreshold: quiz.passThreshold ?? 70, questions } : null;
+};
+
+const optionName = (option: QuizOption) => option.label || `Sign ${option.letter}`;
+
+const correctResponse = (question: QuizQuestion) =>
+  isOptionQuestion(question)
+    ? question.options.filter((o) => o.correct).map(optionName).join(", ")
+    : question.answerText;
+
+const isCorrectAnswer = (question: QuizQuestion, answer: QuizAnswer | null) => {
+  if (!answer) return false;
+  if (answer.kind === "option") return question.options.some((o) => o.id === answer.optionId && o.correct);
+  if (answer.kind === "text") return sameText(answer.value, question.answerText);
+  return answer.correct;
+};
+
+const describeAnswer = (question: QuizQuestion, answer: QuizAnswer | null) => {
+  if (!answer) return "Skipped";
+  if (answer.kind === "option") {
+    const option = question.options.find((o) => o.id === answer.optionId);
+    return option ? optionName(option) : "—";
+  }
+  if (answer.kind === "text") return answer.value.trim();
+  return answer.correct ? "You signed it correctly" : "You still need practice";
 };
 
 const formatTime = (timeMs: number): string => {
@@ -290,23 +398,24 @@ const Lesson: NextPage = () => {
   const hasLessonId = router.isReady && Number.isInteger(lessonId) && lessonId > 0;
 
   const { data, loading, error } = useQuery<LessonPlayerResult>(LOAD_LESSON_PLAYER, {
-    variables: { id: String(lessonId), lessonId },
+    variables: { id: String(lessonId) },
     skip: !hasLessonId,
     fetchPolicy: "network-only",
   });
 
-  console.log("ccccccccccccccccc",data);
-  // const { data, loading, error } = useQuery<LessonUnitsResult>(LOAD_LESSON_UNITS, {
-  //   variables: { id: String(lessonId), lessonId },
-  //   skip: !hasLessonId,
-  //   fetchPolicy: "network-only",
-  // });
+  // A quiz that fails to load shouldn't block the lesson; it then ends after the units
+  const { data: quizData, loading: quizLoading } = useQuery<LessonQuizResult>(LOAD_LESSONQUIZ, {
+    variables: { lessonId },
+    skip: !hasLessonId,
+    fetchPolicy: "network-only",
+  });
+  const quiz = useMemo(() => toLessonQuiz(quizData), [quizData]);
 
   if (!router.isReady) return null;
   if (!hasLessonId) {
     return <LessonMessage title="No lesson selected" text="Pick a lesson from your learning path." />;
   }
-  if (loading) return <LessonMessage title="Loading lesson…" />;
+  if (loading || quizLoading) return <LessonMessage title="Loading lesson…" />;
   if (error) return <LessonMessage title="Could not load this lesson" text={error.message} />;
 
   const lesson = data?.lesson;
@@ -328,25 +437,22 @@ const Lesson: NextPage = () => {
 
   return (
     <LessonInfoContext.Provider value={lessonInfo}>
-      <LessonScreens key={lesson.id} units={units} />
+      <LessonScreens key={lesson.id} units={units} quiz={quiz} />
     </LessonInfoContext.Provider>
   );
 };
 
 export default Lesson;
 
-// Teaching phase, then practice problems and result screens
-const LessonScreens = ({ units }: { units: LessonUnit[] }) => {
+// Teaching phase, then the lesson's quiz and result screens
+const LessonScreens = ({ units, quiz }: { units: LessonUnit[]; quiz: LessonQuiz | null }) => {
   const router = useRouter();
+  const questions = quiz?.questions ?? [];
 
-  const [lessonProblem, setLessonProblem] = useState(0);
-  const [correctAnswerCount, setCorrectAnswerCount] = useState(0);
-  const [incorrectAnswerCount, setIncorrectAnswerCount] = useState(0);
-  const [selectedAnswer, setSelectedAnswer] = useState<null | number>(null);
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [answer, setAnswer] = useState<QuizAnswer | null>(null);
   const [correctAnswerShown, setCorrectAnswerShown] = useState(false);
   const [quitMessageShown, setQuitMessageShown] = useState(false);
-
-  const [selectedAnswers, setSelectedAnswers] = useState<number[]>([]);
 
   const startTime = useRef(Date.now());
   const endTime = useRef(startTime.current + 1000 * 60 * 3 + 1000 * 33);
@@ -354,7 +460,7 @@ const LessonScreens = ({ units }: { units: LessonUnit[] }) => {
   const [questionResults, setQuestionResults] = useState<QuestionResult[]>([]);
   const [reviewLessonShown, setReviewLessonShown] = useState(false);
 
-  // New: the teaching phase (watch each sign) that comes before the practice.
+  // The teaching phase (watch each sign) that comes before the quiz
   const [isStudying, setIsStudying] = useState(true);
   const [unitIndex, setUnitIndex] = useState(0);
 
@@ -363,58 +469,62 @@ const LessonScreens = ({ units }: { units: LessonUnit[] }) => {
   const [isMounted, setIsMounted] = useState(false);
   useEffect(() => setIsMounted(true), []);
 
-  const problem = lessonProblems[lessonProblem] ?? lessonProblem1;
-
-  const totalCorrectAnswersNeeded = 2;
-
   const [isStartingLesson, setIsStartingLesson] = useState(true);
+
+  const question = questions[questionIndex];
+  const isQuizFinished = questionIndex >= questions.length;
+  const correctAnswerCount = questionResults.filter((r) => r.correct).length;
+  const incorrectAnswerCount = questionResults.length - correctAnswerCount;
+  const passThreshold = quiz?.passThreshold ?? 0;
+  const correctNeeded = Math.ceil((passThreshold / 100) * questions.length);
+  const passed = correctAnswerCount >= correctNeeded;
+
   const hearts =
     "fast-forward" in router.query &&
     !isNaN(Number(router.query["fast-forward"]))
       ? 3 - incorrectAnswerCount
       : null;
 
-  const { correctAnswer } = problem;
-  const isAnswerCorrect = Array.isArray(correctAnswer)
-    ? numbersEqual(selectedAnswers, correctAnswer)
-    : selectedAnswer === correctAnswer;
+  const isAnswerCorrect = question ? isCorrectAnswer(question, answer) : false;
 
-  const onCheckAnswer = () => {
-    setCorrectAnswerShown(true);
-    if (isAnswerCorrect) {
-      setCorrectAnswerCount((x) => x + 1);
-    } else {
-      setIncorrectAnswerCount((x) => x + 1);
-    }
-    setQuestionResults((questionResults) => [
-      ...questionResults,
+  const recordResult = (given: QuizAnswer | null) => {
+    if (!question) return;
+    setQuestionResults((results) => [
+      ...results,
       {
-        question: problem.question,
-        yourResponse:
-          problem.type === "SELECT_1_OF_3"
-            ? problem.answers[selectedAnswer ?? 0]?.name ?? ""
-            : selectedAnswers.map((i) => problem.answerTiles[i]).join(" "),
-        correctResponse:
-          problem.type === "SELECT_1_OF_3"
-            ? problem.answers[problem.correctAnswer].name
-            : problem.correctAnswer
-                .map((i) => problem.answerTiles[i])
-                .join(" "),
+        question: question.prompt,
+        yourResponse: describeAnswer(question, given),
+        correctResponse: correctResponse(question),
+        correct: isCorrectAnswer(question, given),
       },
     ]);
   };
 
-  const onFinish = () => {
-    setSelectedAnswer(null);
-    setSelectedAnswers([]);
-    setCorrectAnswerShown(false);
-    setLessonProblem((x) => (x + 1) % lessonProblems.length);
-    endTime.current = Date.now();
+  const onCheckAnswer = () => {
+    setCorrectAnswerShown(true);
+    recordResult(answer);
   };
 
   const onSkip = () => {
-    setSelectedAnswer(null);
+    setAnswer(null);
     setCorrectAnswerShown(true);
+    recordResult(null);
+  };
+
+  const onFinish = () => {
+    setAnswer(null);
+    setCorrectAnswerShown(false);
+    setQuestionIndex((x) => x + 1);
+    endTime.current = Date.now();
+  };
+
+  const restartQuiz = () => {
+    setQuestionIndex(0);
+    setAnswer(null);
+    setCorrectAnswerShown(false);
+    setQuestionResults([]);
+    setReviewLessonShown(false);
+    startTime.current = Date.now();
   };
 
   const unitNumber = Number(router.query["fast-forward"]);
@@ -433,12 +543,7 @@ const LessonScreens = ({ units }: { units: LessonUnit[] }) => {
     );
   }
 
-  if (
-    hearts !== null &&
-    hearts >= 0 &&
-    !correctAnswerShown &&
-    correctAnswerCount >= totalCorrectAnswersNeeded
-  ) {
+  if (hearts !== null && hearts >= 0 && isQuizFinished) {
     return (
       <LessonFastForwardEndPass
         unitNumber={unitNumber}
@@ -466,12 +571,36 @@ const LessonScreens = ({ units }: { units: LessonUnit[] }) => {
         units={units}
         unitIndex={unitIndex}
         setUnitIndex={setUnitIndex}
-        onStartPractice={() => setIsStudying(false)}
+        finishLabel={questions.length ? "Start quiz" : "Finish lesson"}
+        onStartPractice={() => {
+          setIsStudying(false);
+          startTime.current = Date.now();
+          endTime.current = Date.now();
+        }}
       />
     );
   }
 
-  if (correctAnswerCount >= totalCorrectAnswersNeeded && !correctAnswerShown) {
+  if (isQuizFinished || !question) {
+    if (!passed) {
+      return (
+        <QuizFailed
+          correctAnswerCount={correctAnswerCount}
+          total={questions.length}
+          correctNeeded={correctNeeded}
+          passThreshold={passThreshold}
+          onRetry={restartQuiz}
+          onRelearn={() => {
+            restartQuiz();
+            setUnitIndex(0);
+            setIsStudying(true);
+          }}
+          reviewLessonShown={reviewLessonShown}
+          setReviewLessonShown={setReviewLessonShown}
+          questionResults={questionResults}
+        />
+      );
+    }
     return (
       <LessonComplete
         correctAnswerCount={correctAnswerCount}
@@ -485,60 +614,41 @@ const LessonScreens = ({ units }: { units: LessonUnit[] }) => {
     );
   }
 
-  switch (problem.type) {
-    case "SELECT_1_OF_3": {
-      return (
-        <ProblemSelect1Of3
-          problem={problem}
-          correctAnswerCount={correctAnswerCount}
-          totalCorrectAnswersNeeded={totalCorrectAnswersNeeded}
-          selectedAnswer={selectedAnswer}
-          setSelectedAnswer={setSelectedAnswer}
-          quitMessageShown={quitMessageShown}
-          correctAnswerShown={correctAnswerShown}
-          setQuitMessageShown={setQuitMessageShown}
-          isAnswerCorrect={isAnswerCorrect}
-          onCheckAnswer={onCheckAnswer}
-          onFinish={onFinish}
-          onSkip={onSkip}
-          hearts={hearts}
-        />
-      );
-    }
-
-    case "WRITE_IN_ENGLISH": {
-      return (
-        <ProblemWriteInEnglish
-          problem={problem}
-          correctAnswerCount={correctAnswerCount}
-          totalCorrectAnswersNeeded={totalCorrectAnswersNeeded}
-          selectedAnswers={selectedAnswers}
-          setSelectedAnswers={setSelectedAnswers}
-          quitMessageShown={quitMessageShown}
-          correctAnswerShown={correctAnswerShown}
-          setQuitMessageShown={setQuitMessageShown}
-          isAnswerCorrect={isAnswerCorrect}
-          onCheckAnswer={onCheckAnswer}
-          onFinish={onFinish}
-          onSkip={onSkip}
-          hearts={hearts}
-        />
-      );
-    }
-  }
+  return (
+    <QuizQuestionScreen
+      key={question.id}
+      question={question}
+      questionNumber={questionIndex + 1}
+      questionResults={questionResults}
+      total={questions.length}
+      passThreshold={passThreshold}
+      correctNeeded={correctNeeded}
+      answer={answer}
+      setAnswer={setAnswer}
+      correctAnswerShown={correctAnswerShown}
+      isAnswerCorrect={isAnswerCorrect}
+      quitMessageShown={quitMessageShown}
+      setQuitMessageShown={setQuitMessageShown}
+      onCheckAnswer={onCheckAnswer}
+      onFinish={onFinish}
+      onSkip={onSkip}
+      hearts={hearts}
+    />
+  );
 };
 
 /* -------------------------------------------------------------------------- */
 /*  Top row: back link, segmented progress, counter                            */
 /* -------------------------------------------------------------------------- */
 
-const BackLabel = () => {
+const BackLabel = ({ suffix }: { suffix?: string }) => {
   const lessonInfo = React.useContext(LessonInfoContext);
   return (
     <>
       <ArrowLeftIcon />
       <span>
         {lessonInfo.moduleName} · {lessonInfo.lessonTitle}
+        {suffix && ` · ${suffix}`}
       </span>
     </>
   );
@@ -580,40 +690,60 @@ const SegmentedBar = ({
   </div>
 );
 
-const ProgressBar = ({
-  correctAnswerCount,
-  totalCorrectAnswersNeeded,
+/** Quiz top row: one segment per question, green when right, red when wrong, coral for the current one. */
+const QuizTopBar = ({
+  questionResults,
+  total,
   setQuitMessageShown,
   hearts,
 }: {
-  correctAnswerCount: number;
-  totalCorrectAnswersNeeded: number;
+  questionResults: QuestionResult[];
+  total: number;
   setQuitMessageShown: (isShown: boolean) => void;
   hearts: null | number;
 }) => {
   const backClass =
     "flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg py-2 text-sm font-bold text-[#3C3B35] hover:text-[#2C3768] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#2C3768] sm:text-[14.5px]";
+  const answered = questionResults.length;
   return (
     <header className="flex w-full items-center gap-4 sm:gap-7">
-      {correctAnswerCount === 0 ? (
+      {answered === 0 ? (
         <Link href="/learn" className={backClass}>
-          <BackLabel />
+          <BackLabel suffix="Quiz" />
           <span className="sr-only">Exit lesson</span>
         </Link>
       ) : (
         <button className={backClass} onClick={() => setQuitMessageShown(true)}>
-          <BackLabel />
+          <BackLabel suffix="Quiz" />
           <span className="sr-only">Exit lesson</span>
         </button>
       )}
-      <SegmentedBar
-        done={correctAnswerCount}
-        total={totalCorrectAnswersNeeded}
-        label="Lesson progress"
-      />
+      <div
+        className="flex h-[10px] grow gap-1.5"
+        role="progressbar"
+        aria-label="Quiz progress"
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-valuenow={answered}
+      >
+        {Array.from({ length: total }, (_, i) => (
+          <div
+            key={i}
+            className={
+              "h-full flex-1 rounded-full transition-colors duration-500 " +
+              (i < answered
+                ? questionResults[i]?.correct
+                  ? "bg-[#2F9E64]"
+                  : "bg-[#D64545]"
+                : i === answered
+                  ? "bg-[#E8734A]"
+                  : "bg-[#E7E3D9]")
+            }
+          />
+        ))}
+      </div>
       <span className={display + " whitespace-nowrap text-[15px] font-bold"}>
-        {Math.min(correctAnswerCount + 1, totalCorrectAnswersNeeded)} /{" "}
-        {totalCorrectAnswersNeeded}
+        {Math.min(answered + 1, total)} / {total}
       </span>
       {hearts !== null && (
         <div className="flex gap-1" aria-label={`${Math.max(hearts, 0)} hearts left`}>
@@ -672,11 +802,14 @@ const LearnUnits = ({
   units,
   unitIndex,
   setUnitIndex,
+  finishLabel,
   onStartPractice,
 }: {
   units: LessonUnit[];
   unitIndex: number;
   setUnitIndex: React.Dispatch<React.SetStateAction<number>>;
+  /** Text of the last unit's button, e.g. "Start quiz". */
+  finishLabel: string;
   onStartPractice: () => void;
 }) => {
   const unit = units[unitIndex] ?? units[0];
@@ -919,7 +1052,7 @@ const LearnUnits = ({
                 className={btnPrimary + " min-w-[190px]"}
                 onClick={() => (isLast ? onStartPractice() : goTo(unitIndex + 1))}
               >
-                {isLast ? "Start practice" : "Next"}
+                {isLast ? finishLabel : "Next"}
                 <ArrowRightIcon />
               </button>
             </div>
@@ -1064,6 +1197,7 @@ const CheckAnswer = ({
   onCheckAnswer,
   onFinish,
   onSkip,
+  leading,
 }: {
   isAnswerSelected: boolean;
   isAnswerCorrect: boolean;
@@ -1072,14 +1206,21 @@ const CheckAnswer = ({
   onCheckAnswer: () => void;
   onFinish: () => void;
   onSkip: () => void;
+  /** Shown on the left of the bar, e.g. a Replay button. */
+  leading?: React.ReactNode;
 }) => {
   return (
     <>
-      <section className="mx-auto flex w-full max-w-[1328px] items-center gap-3.5 pt-2">
-        <button className={btnOutline + " hidden sm:inline-flex"} onClick={onSkip}>
+      <section className="mx-auto flex w-full max-w-[1328px] items-center gap-3.5 pt-6">
+        {leading}
+        <div className="hidden grow sm:block" />
+        <button
+          className={btnOutline + " hidden sm:inline-flex"}
+          onClick={onSkip}
+          disabled={correctAnswerShown}
+        >
           Skip
         </button>
-        <div className="hidden grow sm:block" />
         {!isAnswerSelected ? (
           <button className={btnDisabled + " grow sm:min-w-[190px] sm:grow-0"} disabled>
             Check
@@ -1145,230 +1286,629 @@ const CheckAnswer = ({
 };
 
 /* -------------------------------------------------------------------------- */
-/*  Practice problems                                                          */
+/*  Quiz questions                                                             */
 /* -------------------------------------------------------------------------- */
 
-const ProblemSelect1Of3 = ({
-  problem,
-  correctAnswerCount,
-  totalCorrectAnswersNeeded,
-  selectedAnswer,
-  setSelectedAnswer,
-  quitMessageShown,
-  correctAnswerShown,
-  setQuitMessageShown,
-  isAnswerCorrect,
-  onCheckAnswer,
-  onFinish,
-  onSkip,
-  hearts,
+const CameraIcon = () => (
+  <Icon size={17}>
+    <path d="M23 7l-7 5 7 5V7z" />
+    <rect x="1" y="5" width="15" height="14" rx="2" />
+  </Icon>
+);
+const StopIcon = () => (
+  <Icon size={15} fill="currentColor">
+    <rect x="6" y="6" width="12" height="12" rx="2" />
+  </Icon>
+);
+const EyeIcon = () => (
+  <Icon size={17}>
+    <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+    <circle cx="12" cy="12" r="3" />
+  </Icon>
+);
+
+const stageClass =
+  "relative flex min-h-[340px] grow flex-col items-center justify-center gap-3.5 overflow-hidden rounded-[20px] bg-[#2C3768] lg:min-h-[420px]";
+const controlsClass = "absolute inset-x-4 bottom-4 rounded-[14px] bg-[#141A33] px-4 pb-3 pt-3.5";
+
+type SignVideoHandle = { replay: () => void };
+
+/** The question's sign: a video with play / speed / full-screen controls, or a still image. */
+const SignVideo = React.forwardRef<SignVideoHandle, { src?: string; isImage: boolean; label: string }>(
+  ({ src, isImage, label }, ref) => {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const stageRef = useRef<HTMLDivElement>(null);
+    const [started, setStarted] = useState(false);
+    const [playing, setPlaying] = useState(false);
+    const [progress, setProgress] = useState(0);
+    const [slow, setSlow] = useState(false);
+
+    const play = () => {
+      const video = videoRef.current;
+      if (!video) return;
+      setStarted(true);
+      void video.play();
+    };
+
+    useImperativeHandle(ref, () => ({
+      replay: () => {
+        if (videoRef.current) videoRef.current.currentTime = 0;
+        play();
+      },
+    }));
+
+    const togglePlay = () => {
+      const video = videoRef.current;
+      if (!video) return;
+      if (video.paused) play();
+      else video.pause();
+    };
+
+    const setSpeed = (isSlow: boolean) => {
+      setSlow(isSlow);
+      if (videoRef.current) videoRef.current.playbackRate = isSlow ? 0.5 : 1;
+    };
+
+    const seek = (value: number) => {
+      const video = videoRef.current;
+      if (video && Number.isFinite(video.duration)) video.currentTime = (value / 100) * video.duration;
+      setProgress(value / 100);
+    };
+
+    if (src && isImage) {
+      return (
+        <div className={stageClass}>
+          <img src={src} alt={label} className="absolute inset-0 h-full w-full object-contain p-4" />
+        </div>
+      );
+    }
+
+    return (
+      <div ref={stageRef} className={stageClass + " pb-[116px]"}>
+        {src && (
+          <video
+            ref={videoRef}
+            src={src}
+            aria-label={label}
+            className="absolute inset-0 h-full w-full object-contain"
+            playsInline
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            onEnded={() => setPlaying(false)}
+            onLoadedMetadata={(e) => {
+              e.currentTarget.playbackRate = slow ? 0.5 : 1;
+            }}
+            onTimeUpdate={(e) => {
+              const { currentTime, duration } = e.currentTarget;
+              setProgress(duration > 0 ? currentTime / duration : 0);
+            }}
+          />
+        )}
+
+        {/* Cover until the learner first presses play */}
+        {!started && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3.5 bg-[#2C3768] pb-[116px]">
+            <button
+              aria-label="Play the sign"
+              disabled={!src}
+              onClick={play}
+              className="flex h-[78px] w-[78px] items-center justify-center rounded-full border-[1.5px] border-white/40 bg-white/15 text-white transition hover:bg-white/25 disabled:hover:bg-white/15"
+            >
+              <PlayIcon size={28} />
+            </button>
+            <div className="mt-1.5 text-center">
+              <div className={display + " text-xl font-bold text-white"}>Watch the sign</div>
+              <div className="mt-1.5 text-sm text-[#C7CBE8]">
+                {src ? "You can replay it as many times as you like" : "The sign video for this question is coming soon"}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className={controlsClass}>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={0.1}
+            value={progress * 100}
+            onChange={(e) => seek(Number(e.target.value))}
+            disabled={!src}
+            aria-label="Seek"
+            className="mb-3 h-1.5 w-full cursor-pointer accent-white"
+          />
+          <div className="flex items-center justify-between">
+            <div className="flex gap-2.5">
+              <button className={vbtn} aria-label={playing ? "Pause" : "Play"} onClick={togglePlay} disabled={!src}>
+                {playing ? <PauseIcon /> : <PlayIcon />}
+              </button>
+              <button
+                className={vbtn + (!slow ? " bg-[#3A4780]" : "")}
+                aria-label="Normal speed, 1 times"
+                aria-pressed={!slow}
+                onClick={() => setSpeed(false)}
+              >
+                1×
+              </button>
+              <button
+                className={vbtn + (slow ? " bg-[#3A4780]" : "")}
+                aria-label="Slow motion, 0.5 times"
+                aria-pressed={slow}
+                onClick={() => setSpeed(true)}
+              >
+                0.5×
+              </button>
+            </div>
+            <button
+              className={vbtn}
+              aria-label="Full screen"
+              onClick={() => void stageRef.current?.requestFullscreen?.()}
+            >
+              <FullscreenIcon />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  },
+);
+SignVideo.displayName = "SignVideo";
+
+/** Option styling: selected in navy; once checked, the right answer green and a wrong pick red. */
+const optionStateClass = (option: QuizOption, selected: boolean, checked: boolean) => {
+  if (checked && option.correct) return "border-[#2F9E64] bg-[#E3F4EA]";
+  if (checked && selected) return "border-[#D64545] bg-[#FBE4E4]";
+  if (selected) return "border-[#2C3768] bg-[#EEF0FA]";
+  return "border-[#E7E3D9] bg-white hover:border-[#2C3768]";
+};
+
+const LetterBadge = ({ letter, active }: { letter: string; active: boolean }) => (
+  <span
+    className={
+      "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[13px] font-bold " +
+      (active ? "bg-[#2C3768] text-white" : "bg-[#EFECE4] text-[#3C3B35]")
+    }
+  >
+    {letter}
+  </span>
+);
+
+/** Multiple choice: the answers are sign videos, shown large in the stage. */
+const OptionVideoGrid = ({
+  options,
+  selectedId,
+  checked,
+  onSelect,
 }: {
-  problem: typeof lessonProblem1;
-  correctAnswerCount: number;
-  totalCorrectAnswersNeeded: number;
-  selectedAnswer: number | null;
-  setSelectedAnswer: React.Dispatch<React.SetStateAction<number | null>>;
-  correctAnswerShown: boolean;
-  quitMessageShown: boolean;
-  setQuitMessageShown: React.Dispatch<React.SetStateAction<boolean>>;
-  isAnswerCorrect: boolean;
-  onCheckAnswer: () => void;
-  onFinish: () => void;
-  onSkip: () => void;
-  hearts: number | null;
-}) => {
-  const { question, answers, correctAnswer } = problem;
+  options: QuizOption[];
+  selectedId: number | null;
+  checked: boolean;
+  onSelect: (id: number) => void;
+}) => (
+  <div className="grid grow grid-cols-2 gap-3 rounded-[20px] bg-[#2C3768] p-3 lg:min-h-[420px]" role="radiogroup">
+    {options.map((option) => {
+      const selected = option.id === selectedId;
+      return (
+        <button
+          key={option.id}
+          type="button"
+          role="radio"
+          aria-checked={selected}
+          aria-label={`Sign ${option.letter}`}
+          disabled={checked}
+          onClick={() => onSelect(option.id)}
+          className={
+            "relative flex min-h-[150px] items-center justify-center overflow-hidden rounded-2xl border-[3px] bg-[#1B2340] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white " +
+            (checked && option.correct
+              ? "border-[#2F9E64]"
+              : checked && selected
+                ? "border-[#D64545]"
+                : selected
+                  ? "border-[#E8734A]"
+                  : "border-transparent hover:border-white/40")
+          }
+        >
+          {option.mediaRef ? (
+            option.isImage ? (
+              <img src={option.mediaRef} alt="" className="absolute inset-0 h-full w-full object-contain" />
+            ) : (
+              <video
+                src={option.mediaRef}
+                className="absolute inset-0 h-full w-full object-contain"
+                muted
+                loop
+                autoPlay
+                playsInline
+              />
+            )
+          ) : (
+            <span className="text-sm text-[#C7CBE8]">No video</span>
+          )}
+          <span className="absolute left-2.5 top-2.5">
+            <LetterBadge letter={option.letter} active={selected} />
+          </span>
+        </button>
+      );
+    })}
+  </div>
+);
+
+/** Sign recall: no video, just the thing to sign; the answer appears once revealed. */
+const PromptStage = ({ prompt, answer, revealed }: { prompt: string; answer: string; revealed: boolean }) => (
+  <div className={stageClass + " px-6 text-center"}>
+    <div className="text-xs font-bold uppercase tracking-[.08em] text-[#9AA1C9]">Sign it from memory</div>
+    <div className={display + " text-3xl font-bold text-white sm:text-4xl"}>{prompt}</div>
+    {revealed && (
+      <div className="mt-4 rounded-2xl bg-white/10 px-6 py-4">
+        <div className="text-xs font-bold uppercase tracking-[.08em] text-[#C7CBE8]">Answer</div>
+        <div className={display + " mt-1 text-5xl font-bold text-white"}>{answer}</div>
+      </div>
+    )}
+  </div>
+);
+
+type RecorderState = "idle" | "live" | "recording" | "recorded" | "error";
+
+/** Video record: the learner films themselves signing. The clip stays on their device. */
+const CameraRecorder = ({ onAttempted, disabled }: { onAttempted: () => void; disabled: boolean }) => {
+  const liveRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const [state, setState] = useState<RecorderState>("idle");
+  const [clipUrl, setClipUrl] = useState<string | null>(null);
+
+  // Turn the camera off when the question changes or the page closes
+  useEffect(() => () => streamRef.current?.getTracks().forEach((track) => track.stop()), []);
+  useEffect(() => () => void (clipUrl && URL.revokeObjectURL(clipUrl)), [clipUrl]);
+  useEffect(() => {
+    if (liveRef.current && (state === "live" || state === "recording")) liveRef.current.srcObject = streamRef.current;
+  }, [state]);
+
+  const startCamera = async () => {
+    try {
+      streamRef.current = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      setState("live");
+    } catch {
+      setState("error");
+      onAttempted();
+    }
+  };
+
+  const startRecording = () => {
+    const stream = streamRef.current;
+    if (!stream) return;
+    const chunks: Blob[] = [];
+    const recorder = new MediaRecorder(stream);
+    recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    recorder.onstop = () => {
+      setClipUrl(URL.createObjectURL(new Blob(chunks, { type: recorder.mimeType })));
+      setState("recorded");
+      onAttempted();
+    };
+    recorderRef.current = recorder;
+    recorder.start();
+    setState("recording");
+  };
 
   return (
-    <Shell>
-      <div className="mx-auto flex w-full max-w-[1328px] grow flex-col gap-6 lg:gap-[26px]">
-        <ProgressBar
-          correctAnswerCount={correctAnswerCount}
-          totalCorrectAnswersNeeded={totalCorrectAnswersNeeded}
-          setQuitMessageShown={setQuitMessageShown}
-          hearts={hearts}
-        />
-        <section className="mx-auto flex w-full max-w-2xl grow flex-col justify-center gap-8 pb-24 sm:gap-12">
-          <div>
-            <span className="inline-flex rounded-full bg-[#EEF0FA] px-3 py-[5px] text-[12.5px] font-bold text-[#2C3768]">
-              Choose the sign
-            </span>
-            <h1 className={display + " mt-3 text-2xl font-bold sm:text-3xl"}>
-              {question}
-            </h1>
+    <div className={stageClass + " pb-[92px]"}>
+      {(state === "live" || state === "recording") && (
+        <video ref={liveRef} autoPlay muted playsInline className="absolute inset-0 h-full w-full -scale-x-100 object-cover" />
+      )}
+      {state === "recorded" && clipUrl && (
+        <video src={clipUrl} controls loop autoPlay playsInline className="absolute inset-0 h-full w-full -scale-x-100 object-contain" />
+      )}
+      {state === "idle" && (
+        <div className="px-6 text-center">
+          <div className={display + " text-xl font-bold text-white"}>Record your sign</div>
+          <div className="mt-1.5 text-sm text-[#C7CBE8]">Your video stays on this device</div>
+        </div>
+      )}
+      {state === "error" && (
+        <div className="max-w-sm px-6 text-center">
+          <div className={display + " text-xl font-bold text-white"}>Camera unavailable</div>
+          <div className="mt-1.5 text-sm text-[#C7CBE8]">
+            Sign in front of a mirror instead, then check your answer.
           </div>
-          <div
-            className="grid grid-cols-2 gap-3 sm:grid-cols-3"
-            role="radiogroup"
-            aria-label={question}
-          >
-            {answers.map((answer, i) => {
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  className={
-                    "flex flex-col items-center gap-2 rounded-2xl border-2 p-4 text-center transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2C3768] " +
-                    (i === selectedAnswer
-                      ? "border-[#2C3768] bg-[#EEF0FA] text-[#2C3768]"
-                      : "border-[#E7E3D9] bg-white hover:border-[#2C3768]")
-                  }
-                  role="radio"
-                  aria-checked={i === selectedAnswer}
-                  onClick={() => setSelectedAnswer(i)}
-                >
-                  {answer.icon}
-                  <h2 className="text-center font-semibold">{answer.name}</h2>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      </div>
+        </div>
+      )}
+      {state === "recording" && (
+        <span className="absolute left-4 top-4 flex items-center gap-2 rounded-full bg-[#D64545] px-3 py-1 text-xs font-bold text-white">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
+          Recording
+        </span>
+      )}
 
-      <CheckAnswer
-        correctAnswer={answers[correctAnswer].name}
-        correctAnswerShown={correctAnswerShown}
-        isAnswerCorrect={isAnswerCorrect}
-        isAnswerSelected={selectedAnswer !== null}
-        onCheckAnswer={onCheckAnswer}
-        onFinish={onFinish}
-        onSkip={onSkip}
-      />
-
-      <QuitMessage
-        quitMessageShown={quitMessageShown}
-        setQuitMessageShown={setQuitMessageShown}
-      />
-    </Shell>
+      {state !== "error" && (
+        <div className={controlsClass + " flex justify-center gap-2.5"}>
+          {state === "idle" && (
+            <button className={vbtn + " bg-[#3A4780]"} onClick={() => void startCamera()} disabled={disabled}>
+              <CameraIcon />
+              Turn on camera
+            </button>
+          )}
+          {state === "live" && (
+            <button className={vbtn + " bg-[#D64545] hover:bg-[#C03B3B]"} onClick={startRecording} disabled={disabled}>
+              <span className="h-3 w-3 rounded-full bg-white" />
+              Record
+            </button>
+          )}
+          {state === "recording" && (
+            <button className={vbtn + " bg-[#3A4780]"} onClick={() => recorderRef.current?.stop()}>
+              <StopIcon />
+              Stop
+            </button>
+          )}
+          {state === "recorded" && (
+            <button className={vbtn + " bg-[#3A4780]"} onClick={() => setState("live")} disabled={disabled}>
+              <ReplayIcon />
+              Retake
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 };
 
-const ProblemWriteInEnglish = ({
-  problem,
-  correctAnswerCount,
-  totalCorrectAnswersNeeded,
-  selectedAnswers,
-  setSelectedAnswers,
-  quitMessageShown,
+const QUESTION_HINTS: Record<QuestionType, string> = {
+  watch_match: "Watch the sign, then choose your answer.",
+  multiple_choice: "Watch each sign, then choose the one that matches.",
+  fill_blank: "Watch the sign, then type what you see.",
+  sign_recall: "Sign it yourself, then reveal the answer and mark how you did.",
+  video_record: "Record yourself signing, then compare with the answer.",
+};
+
+/** For signed answers there is nothing to auto-check: reveal the answer, then the learner marks themselves. */
+const SelfCheck = ({
+  question,
+  revealed,
+  onReveal,
+  canReveal,
+  answer,
+  setAnswer,
+  checked,
+}: {
+  question: QuizQuestion;
+  revealed: boolean;
+  onReveal: () => void;
+  canReveal: boolean;
+  answer: QuizAnswer | null;
+  setAnswer: (answer: QuizAnswer) => void;
+  checked: boolean;
+}) => {
+  if (!revealed) {
+    return (
+      <div className="flex flex-col gap-2">
+        <button className={btnOutline + " w-full"} onClick={onReveal} disabled={!canReveal}>
+          <EyeIcon />
+          Show answer
+        </button>
+        {!canReveal && <p className="text-center text-[13px] text-[#6B6A63]">Record your sign first.</p>}
+      </div>
+    );
+  }
+
+  const verdict = answer?.kind === "self" ? answer.correct : null;
+  const choice = (correct: boolean, text: string) => (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={verdict === correct}
+      disabled={checked}
+      onClick={() => setAnswer({ kind: "self", correct })}
+      className={
+        "flex min-h-[64px] items-center justify-center rounded-2xl border-2 px-4 text-[15px] font-bold transition " +
+        (verdict === correct ? "border-[#2C3768] bg-[#EEF0FA] text-[#2C3768]" : "border-[#E7E3D9] bg-white hover:border-[#2C3768]")
+      }
+    >
+      {text}
+    </button>
+  );
+
+  return (
+    <div className="flex flex-col gap-3">
+      {question.type === "video_record" && (
+        <div className="rounded-2xl border border-[#C7CBE8] bg-[#EEF0FA] px-5 py-4">
+          <div className="text-[11.5px] font-bold uppercase tracking-[.07em] text-[#2C3768]">Answer</div>
+          <div className={display + " mt-1 text-[28px] font-bold"}>{question.answerText}</div>
+          {question.mediaRef &&
+            (question.isImage ? (
+              <img src={question.mediaRef} alt={`Sign: ${question.answerText}`} className="mt-3 max-h-48 w-full rounded-xl object-contain" />
+            ) : (
+              <video src={question.mediaRef} controls playsInline className="mt-3 max-h-48 w-full rounded-xl bg-black" />
+            ))}
+        </div>
+      )}
+      <div className="text-[13px] font-semibold text-[#57564F]">Did your sign match?</div>
+      <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Did your sign match?">
+        {choice(true, "I got it right")}
+        {choice(false, "Not yet")}
+      </div>
+    </div>
+  );
+};
+
+const QuizQuestionScreen = ({
+  question,
+  questionNumber,
+  questionResults,
+  total,
+  passThreshold,
+  correctNeeded,
+  answer,
+  setAnswer,
   correctAnswerShown,
-  setQuitMessageShown,
   isAnswerCorrect,
+  quitMessageShown,
+  setQuitMessageShown,
   onCheckAnswer,
   onFinish,
   onSkip,
   hearts,
 }: {
-  problem: typeof lessonProblem2;
-  correctAnswerCount: number;
-  totalCorrectAnswersNeeded: number;
-  selectedAnswers: number[];
-  setSelectedAnswers: React.Dispatch<React.SetStateAction<number[]>>;
+  question: QuizQuestion;
+  questionNumber: number;
+  questionResults: QuestionResult[];
+  total: number;
+  passThreshold: number;
+  correctNeeded: number;
+  answer: QuizAnswer | null;
+  setAnswer: (answer: QuizAnswer | null) => void;
   correctAnswerShown: boolean;
+  isAnswerCorrect: boolean;
   quitMessageShown: boolean;
   setQuitMessageShown: React.Dispatch<React.SetStateAction<boolean>>;
-  isAnswerCorrect: boolean;
   onCheckAnswer: () => void;
   onFinish: () => void;
   onSkip: () => void;
   hearts: number | null;
 }) => {
-  const { question, correctAnswer, answerTiles } = problem;
+  const signRef = useRef<SignVideoHandle>(null);
+  const [revealed, setRevealed] = useState(false);
+  const [attempted, setAttempted] = useState(false);
 
-  const tile =
-    "min-h-[44px] rounded-xl border-2 bg-white px-3.5 py-2 font-semibold text-[#1C1C24] transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2C3768] ";
+  const hasSignVideo = question.type === "watch_match" || question.type === "fill_blank";
+  const selectedId = answer?.kind === "option" ? answer.optionId : null;
+  const isAnswerSelected = answer !== null && (answer.kind !== "text" || answer.value.trim() !== "");
+  const selectOption = (optionId: number) => setAnswer({ kind: "option", optionId });
 
-  return (
-    <Shell>
-      <div className="mx-auto flex w-full max-w-[1328px] grow flex-col gap-6 lg:gap-[26px]">
-        <ProgressBar
-          correctAnswerCount={correctAnswerCount}
-          totalCorrectAnswersNeeded={totalCorrectAnswersNeeded}
-          setQuitMessageShown={setQuitMessageShown}
-          hearts={hearts}
-        />
-        <section className="mx-auto flex w-full max-w-2xl grow flex-col justify-center gap-8 pb-24 sm:gap-10">
-          <div>
-            <span className="inline-flex rounded-full bg-[#EEF0FA] px-3 py-[5px] text-[12.5px] font-bold text-[#2C3768]">
-              Translate
-            </span>
-            <h1 className={display + " mt-3 text-2xl font-bold sm:text-3xl"}>
-              Write this in English
-            </h1>
-          </div>
+  const stage = (() => {
+    switch (question.type) {
+      case "watch_match":
+      case "fill_blank":
+        return <SignVideo ref={signRef} src={question.mediaRef} isImage={question.isImage} label="Sign to identify" />;
+      case "multiple_choice":
+        return (
+          <OptionVideoGrid
+            options={question.options}
+            selectedId={selectedId}
+            checked={correctAnswerShown}
+            onSelect={selectOption}
+          />
+        );
+      case "sign_recall":
+        return <PromptStage prompt={question.prompt} answer={question.answerText} revealed={revealed} />;
+      case "video_record":
+        return <CameraRecorder onAttempted={() => setAttempted(true)} disabled={correctAnswerShown} />;
+    }
+  })();
 
-          <div className="w-full">
-            <div className="flex items-center gap-2 px-2">
-              <Image src={womanPng} alt="" width={92} height={115} />
-              <div className="relative ml-2 w-fit rounded-2xl border-2 border-[#E7E3D9] bg-white p-4 font-semibold">
-                {question}
-                <div
-                  className="absolute h-4 w-4 rotate-45 border-b-2 border-l-2 border-[#E7E3D9] bg-white"
-                  style={{
-                    top: "calc(50% - 8px)",
-                    left: "-10px",
-                  }}
-                ></div>
-              </div>
-            </div>
-
-            <div
-              className="mt-3 flex min-h-[64px] flex-wrap gap-2 rounded-2xl border-2 border-dashed border-[#D9D4C7] bg-white/60 p-2"
-              aria-label="Your answer"
-            >
-              {selectedAnswers.map((i) => {
-                return (
-                  <button
-                    key={i}
-                    className={tile + "border-[#2C3768] hover:bg-[#EEF0FA]"}
-                    onClick={() => {
-                      setSelectedAnswers((selectedAnswers) => {
-                        return selectedAnswers.filter((x) => x !== i);
-                      });
-                    }}
-                  >
-                    {answerTiles[i]}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div className="flex flex-wrap justify-center gap-2">
-            {answerTiles.map((answerTile, i) => {
+  const answerArea = (() => {
+    switch (question.type) {
+      case "watch_match":
+      case "multiple_choice":
+        return (
+          <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label={question.prompt}>
+            {question.options.map((option) => {
+              const selected = option.id === selectedId;
+              const textOnly = question.type === "watch_match";
               return (
                 <button
-                  key={i}
+                  key={option.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  disabled={correctAnswerShown}
+                  onClick={() => selectOption(option.id)}
                   className={
-                    selectedAnswers.includes(i)
-                      ? tile + "border-[#E7E3D9] !bg-[#E7E3D9] text-[#E7E3D9]"
-                      : tile + "border-[#D9D4C7] hover:border-[#2C3768]"
-                  }
-                  disabled={selectedAnswers.includes(i)}
-                  onClick={() =>
-                    setSelectedAnswers((selectedAnswers) => {
-                      if (selectedAnswers.includes(i)) {
-                        return selectedAnswers;
-                      }
-                      return [...selectedAnswers, i];
-                    })
+                    "flex min-h-[76px] items-center gap-3.5 rounded-2xl border-2 px-4 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2C3768] " +
+                    optionStateClass(option, selected, correctAnswerShown)
                   }
                 >
-                  {answerTile}
+                  <LetterBadge letter={option.letter} active={selected} />
+                  <span className={display + (textOnly ? " text-[26px] font-bold" : " text-[15px] font-bold")}>
+                    {textOnly ? option.label : option.label || `Sign ${option.letter}`}
+                  </span>
                 </button>
               );
             })}
           </div>
-        </section>
+        );
+      case "fill_blank":
+        return (
+          <input
+            autoFocus
+            value={answer?.kind === "text" ? answer.value : ""}
+            onChange={(e) => setAnswer({ kind: "text", value: e.target.value })}
+            onKeyDown={(e) => e.key === "Enter" && isAnswerSelected && !correctAnswerShown && onCheckAnswer()}
+            disabled={correctAnswerShown}
+            placeholder="Type your answer"
+            aria-label="Your answer"
+            className={
+              display +
+              " h-[76px] w-full rounded-2xl border-2 border-[#E7E3D9] bg-white px-5 text-[26px] font-bold outline-none transition focus:border-[#2C3768]"
+            }
+          />
+        );
+      case "sign_recall":
+      case "video_record":
+        return (
+          <SelfCheck
+            question={question}
+            revealed={revealed}
+            onReveal={() => setRevealed(true)}
+            canReveal={question.type === "sign_recall" || attempted}
+            answer={answer}
+            setAnswer={setAnswer}
+            checked={correctAnswerShown}
+          />
+        );
+    }
+  })();
+
+  return (
+    <Shell>
+      <div className="mx-auto flex w-full max-w-[1328px] grow flex-col gap-6 lg:gap-[26px]">
+        <QuizTopBar
+          questionResults={questionResults}
+          total={total}
+          setQuitMessageShown={setQuitMessageShown}
+          hearts={hearts}
+        />
+
+        <div className="flex grow flex-col gap-6 lg:flex-row lg:gap-7">
+          <div className="flex min-w-0 flex-1 flex-col">{stage}</div>
+
+          <aside className="flex w-full shrink-0 flex-col gap-3.5 lg:w-[440px]">
+            <section className="rounded-2xl border border-[#E7E3D9] bg-white px-[22px] py-5">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center rounded-full bg-[#EEF0FA] px-3 py-[5px] text-[12.5px] font-bold text-[#2C3768]">
+                  Quiz
+                </span>
+                <span className="text-[13px] text-[#6B6A63]">
+                  Question {questionNumber} of {total}
+                </span>
+              </div>
+              <h1 className={display + " mt-3.5 text-[26px] font-bold leading-tight"}>{question.prompt}</h1>
+              <p className="mb-4 mt-1.5 text-[13px] text-[#6B6A63]">{QUESTION_HINTS[question.type]}</p>
+              {answerArea}
+            </section>
+
+            <div className="flex items-center gap-2 rounded-[14px] border border-[#F0D48A] bg-[#FFF1D1] px-4 py-3 text-[13px] font-semibold text-[#4A3300]">
+              <BulbIcon />
+              Pass mark {passThreshold}% · you need {correctNeeded} of {total} correct
+            </div>
+          </aside>
+        </div>
       </div>
 
       <CheckAnswer
-        correctAnswer={correctAnswer.map((i) => answerTiles[i]).join(" ")}
+        correctAnswer={correctResponse(question)}
         correctAnswerShown={correctAnswerShown}
         isAnswerCorrect={isAnswerCorrect}
-        isAnswerSelected={selectedAnswers.length > 0}
+        isAnswerSelected={isAnswerSelected}
         onCheckAnswer={onCheckAnswer}
         onFinish={onFinish}
         onSkip={onSkip}
+        leading={
+          hasSignVideo && question.mediaRef && !question.isImage ? (
+            <button className={btnOutline} onClick={() => signRef.current?.replay()}>
+              <ReplayIcon />
+              Replay
+            </button>
+          ) : undefined
+        }
       />
 
       <QuitMessage
@@ -1418,6 +1958,8 @@ const LessonComplete = ({
 }) => {
   const router = useRouter();
   const isPractice = "practice" in router.query;
+  const lessonInfo = React.useContext(LessonInfoContext);
+  const answered = correctAnswerCount + incorrectAnswerCount;
 
   const increaseXp = useBoundStore((x) => x.increaseXp);
   const addToday = useBoundStore((x) => x.addToday);
@@ -1440,7 +1982,7 @@ const LessonComplete = ({
               Total XP
             </h2>
             <div className={display + " py-5 text-2xl font-bold"}>
-              {correctAnswerCount}
+              {lessonInfo.xp}
             </div>
           </div>
           <div className={stat}>
@@ -1456,12 +1998,8 @@ const LessonComplete = ({
               Amazing
             </h2>
             <div className={display + " py-5 text-2xl font-bold"}>
-              {Math.round(
-                (correctAnswerCount /
-                  (correctAnswerCount + incorrectAnswerCount)) *
-                  100,
-              )}
-              %
+              {/* A lesson without a quiz has nothing to score */}
+              {answered ? Math.round((correctAnswerCount / answered) * 100) : 100}%
             </div>
           </div>
         </div>
@@ -1471,12 +2009,13 @@ const LessonComplete = ({
           className={btnPrimary + " w-full sm:w-auto sm:min-w-[190px]"}
           href="/learn"
           onClick={() => {
-            increaseXp(correctAnswerCount);
+            increaseXp(lessonInfo.xp);
             addToday();
             increaseLingots(isPractice ? 0 : 1);
             if (!isPractice) {
               increaseLessonsCompleted();
             }
+            // saveQuizAttempt();
           }}
         >
           Continue
@@ -1492,10 +2031,59 @@ const LessonComplete = ({
   );
 };
 
+/** Quiz finished below the pass mark: try again, or rewatch the lesson's signs first. */
+const QuizFailed = ({
+  correctAnswerCount,
+  total,
+  correctNeeded,
+  passThreshold,
+  onRetry,
+  onRelearn,
+  reviewLessonShown,
+  setReviewLessonShown,
+  questionResults,
+}: {
+  correctAnswerCount: number;
+  total: number;
+  correctNeeded: number;
+  passThreshold: number;
+  onRetry: () => void;
+  onRelearn: () => void;
+  reviewLessonShown: boolean;
+  setReviewLessonShown: React.Dispatch<React.SetStateAction<boolean>>;
+  questionResults: QuestionResult[];
+}) => (
+  <Shell>
+    <div className="flex grow flex-col items-center justify-center gap-5 text-center">
+      <h1 className={display + " text-3xl font-bold"}>Almost there!</h1>
+      <p className="max-w-md text-lg text-[#57564F]">
+        You got {correctAnswerCount} of {total} right. You need {correctNeeded} ({passThreshold}%) to pass
+        this lesson. Retakes are unlimited.
+      </p>
+    </div>
+    <ResultActions onReview={() => setReviewLessonShown(true)}>
+      <button className={btnOutline + " w-full sm:w-auto"} onClick={onRelearn}>
+        <ReplayIcon />
+        Watch the signs again
+      </button>
+      <button className={btnPrimary + " w-full sm:w-auto sm:min-w-[190px]"} onClick={onRetry}>
+        Try again
+        <ArrowRightIcon />
+      </button>
+    </ResultActions>
+    <ReviewLesson
+      reviewLessonShown={reviewLessonShown}
+      setReviewLessonShown={setReviewLessonShown}
+      questionResults={questionResults}
+    />
+  </Shell>
+);
+
 type QuestionResult = {
   question: string;
   yourResponse: string;
   correctResponse: string;
+  correct: boolean;
 };
 
 const ReviewLesson = ({
@@ -1547,7 +2135,7 @@ const ReviewLesson = ({
                 tabIndex={reviewLessonShown ? 0 : -1}
                 className={[
                   "relative flex flex-col items-stretch gap-3 rounded-2xl p-5 text-left",
-                  questionResult.yourResponse === questionResult.correctResponse
+                  questionResult.correct
                     ? "bg-[#E3F4EA] text-[#1F7A4B]"
                     : "bg-[#FBE4E4] text-[#B53030]",
                 ].join(" ")}
@@ -1562,8 +2150,7 @@ const ReviewLesson = ({
                 <div className="flex justify-between gap-2">
                   <h3 className="font-bold">{questionResult.question}</h3>
                   <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white">
-                    {questionResult.yourResponse ===
-                    questionResult.correctResponse ? (
+                    {questionResult.correct ? (
                       <DoneSvg className="h-5 w-5" />
                     ) : (
                       <BigCloseSvg className="h-5 w-5" />
